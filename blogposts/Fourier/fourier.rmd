@@ -1,0 +1,524 @@
+---
+output:
+    html_fragment
+---
+
+*If you enjoy this post, subscribe using the form to the left! I try
+ to make new posts every weekend, though sometimes life gets in the
+ way (this one took 6 weekends).*
+
+This is the second post in my series on great algorithms. My last post
+was on the [Metropolis-Hastings
+algorithm](http://michaeljflynn.net/2015/06/01/my-favorite-algorithm-metropolis-hastings/).
+
+## History and Motivation
+
+The Fourier transform is a fundamental operation in applied math. The
+original Fourier transform is attributed to [Joseph
+Fourier](https://en.wikipedia.org/wiki/Joseph_Fourier), a French
+mathematician and physicist to solve partial differential equations
+involved in the transfer of heat [1]. The revelation that any function
+can be approximated by a series of sines and cosines exploded far
+beyond the original application. The technique was used in
+applications from digital signal processing to heat transfer to
+detecting nuclear tests, all using an algorithm that summed $N$ terms
+for each of $N$ output terms, and therefore had an asymptotic runtime
+of $O(N^2)$. The $O(N\log N)$ algorithm was first presented in a
+complete, packaged form in the 1965 paper by [John
+Tukey](https://en.wikipedia.org/wiki/John_Tukey) and [James
+Cooley](https://en.wikipedia.org/wiki/James_Cooley): "An algorithm for
+the machine calculation of complex fourier series" [2]. There is
+evidence that the FFT had been discovered before. Notably, Gauss used
+the algorithm in the early 1800s to interpolate the trajectory of the
+asteroid Pallas but never published his results (aymptotic runtime
+matters when you're doing all the computation by hand!). The Ex Libris
+blog gives an interesting analysis of Gauss's approach
+[here](http://nonagon.org/ExLibris/gauss-fast-fourier-transform). Others
+make claim on discovering the fundamental principle behind the FFT
+first, but no one got it in a form that got users to realize they
+could perform their $O(N^2)$ computations in $O(N\log N)$ until Tukey
+and Cooley and for that they deserve credit.
+
+The motivation behind the development of the FFT was not
+academic. This was the case for many algorithmic improvements of the
+50's and 60's. In a time where business-scale mainframe computers like
+the [IBM System/360](https://en.wikipedia.org/wiki/IBM_System/360)
+only had processing speeds of 35 kilohertz and memory sizes of 512
+kilobytes, optimizing algorithms for memory and time performance had
+material economic benefits for companies. For the FFT there were
+national security reasons as well. James Cooley gives an interesting
+account of his development of the algorithm in a 1988 issue of
+*Mikrochmica Acta*: "The Re-Discovery of the Fast Fourier Transform
+Algorithm" [3]. The way he tells it, the (hydrogen-bomb) physicist
+[Richard Garwin](https://en.wikipedia.org/wiki/Richard_Garwin) had a
+huge part in putting the effort together, for Cold-War purposes:
+
+> I was working on a research project of my own when Richard Garwin
+  came to the computing center of the laboratory with some notes he
+  made while with John Tukey at a meeting of President Kennedy's
+  Scientific Advisory Committee, of which they were both members. John
+  Tukey showed that if $N$, is a composite, $N = ab$, then the Fourier
+  series can be expressed as an a-term series of subseries of b terms
+  each. If one were computing all values of the series, this would
+  reduce the number of operations from $N^2$ to $N(a+ b)$. Tukey also
+  said that if this were iterated, the number of operations would be
+  proportional to $N\log (N)$ instead of $N^2$ Garwin knew that this
+  was a very important calculation and he wanted to have this idea
+  developed and applied.
+
+> Garwin described his problem of determining the periodicities of the
+  spin orientations in a 3-D crystal of He$^3$. Later, I found out that he was far
+  more interested in improving the ability to do remote seismic monitoring of
+  nuclear explosions since the Russians would not agree to inspections within
+  their borders thereby hindering efforts at obtaining a nuclear test ban treaty.
+  He also saw a need for the capability of long range acoustical detection of
+  submarines. Like many others, I did not see the significance in this
+  improvement and gave the job a little less priority than my own research.
+  However, I was told of Garwin's reputation and, prodded by his occasional
+  telephone calls (some of them to my manager), I produced a 3-dimensional
+  FFT program. I put some effort into designing the algorithm so as to save
+  storage and addressing by over-writing data and I spent some time working
+  out a 3-dimensional indexing scheme that was combined with the indexing
+  within the algorithm.
+
+> Garwin publicized the program at first through his many personal
+  contacts, producing a small but increasing stream of requests for
+  copies of it.
+
+This is not to say that Garwin came up with the idea or wrote the code
+or paper, but his presence here is indisputable. I am impressed that
+Garwin was able to pose a dummy physics problem for Cooley to solve
+that he could then use to detect nuclear tests and track nuclear
+submarines - but that is the immense power of the FFT!
+
+Cooley's article has lots of cool historical tidbits in it, including
+notes about the computational limits of the day. One detail is the
+"record" fourier transform on a dataset with 2048 samples:
+
+> Another member of our department, Lee Alsop, who was a geophysicist and
+  adjunct professor at the Lamont Geophysical Laboratory of Columbia
+  University decided to try the new algorithm on a record of 2048 samples of
+  a strain seismograph of the Rat Island earthquake. 
+
+Another is an example of computation that was *still* infeasible, even
+with the algorithmic speedups. When approached by a colleague with
+spectrum data to analyze he recounts: 
+
+> One extraordinary thing about this was that a single record of data
+  was about 512 000 points and all values of the spectrum were needed. This
+  was beyond the capacity of the high speed memory of existing machines. 
+
+He does mention that the FFT does give a theoretical speedup by a
+factor of 12,800 in this case. Finally the collaboration with Tukey
+was very limited (as well as the editing):
+
+> Thus, the paper made only one round trip between me and Tukey and our
+  only collaboration was in a few telephone conversations.
+
+Perhaps that explains why it is not very easy to read...
+
+Since then, there have been too many applications of the FFT to
+count. The algorithm goes so far as to be one of the [fundamental
+operations](https://en.wikipedia.org/wiki/Quantum_Fourier_transform)
+in gate-based [quantum
+computing](https://en.wikipedia.org/wiki/Quantum_computing). Therefore,
+it's probably worth a look.
+
+## Introduction
+
+The basic idea is to take advantage of symmetries in the complex
+exponential to "factor" the problem into several smaller problems
+recursively, yeilding standard "divide and conquer" speedups. While
+the algorithm has actually been generalized to work for any composite
+number of datapoint, the presentation is easiest when the number of
+points is a power of 2, so that is a fundamental assumption I will
+make throughout this post.
+
+
+I'm going to assume in this post that readers are familiar with the
+[Fourier series](http://mathworld.wolfram.com/FourierSeries.html) and
+it's generalization, the [Fourier
+transform](http://mathworld.wolfram.com/FourierTransform.html) at a
+superficial level. To review, you can approximate any function over an
+interval of length $L$ with sines and cosines with period equal to
+$L$:
+
+$$ f(x) = \frac{1}{2} a_0 + \sum_{n = 1}^{\infty} a_n \sin \left (\frac{2\pi}{L}nx \right )  + \sum_{n=1}^{\infty} b_n \cos \left (\frac{2\pi}{L}nx \right ).$$ 
+
+Using the identities $e^{i\theta} = \cos\theta + i\sin\theta$,
+$\sin\theta = \frac{i}{2}(e^{i\theta} + e^{-i\theta})$, and $\cos\theta
+= \frac{1}{2}(e^{i\theta} - e^{-i\theta})$, these can be really handily
+represented as complex exponentials:
+
+$$ \begin{align}
+f(x) =& \frac{1}{2} a_0 + \sum_{n = 1}^{\infty} a_n \sin \left (\frac{2\pi}{L}nx \right )  + \sum_{n=1}^{\infty} b_n \cos \left (\frac{2\pi}{L}nx \right ) \\ 
+=& \frac{1}{2} a_0 + \frac{1}{2}\sum_{n = 1}^{\infty} ia_n (e^{2\pi i n x / L} - e^{-2\pi i n x / L})    + \frac{1}{2}\sum_{n=1}^{\infty} b_n (e^{2\pi i n x / L} + e^{-2\pi i n x / L}) \\
+=& \frac{1}{2} a_0 e^{2\pi i 0 x / L}  + \frac{1}{2}\sum_{n = 1}^{\infty} (b_n + ia_n) e^{2\pi i n x / L} + \frac{1}{2}\sum_{n=1}^{\infty} (b_n - i a_n) e^{-2\pi i n x / L} 
+\end{align} $$ 
+
+Notice that that if we define $c_0 = \frac{1}{2} a_0$, $c_n =
+\frac{1}{2} (b_n + \mbox{sign}(n) i a_n)$, we can greatly simplify the
+above to the final form:
+
+$$ f(x) = \sum_{n = -\infty}^{\infty} c_n e^{2\pi i n x / L}.$$
+
+The coefficients can be found by taking advantage of an indentity of
+the complex exponential, namely that it integrates to zero over one
+full period, i.e. $\int_0^L e^{2\pi i (m-n) x / L} = L$ if $m=n$ and
+$0$ of $m \neq n$. This can be used to isolate $c_m$:
+
+$$ \int_0^L f(x) e^{-2 \pi i m x} dx  = \sum_{n = -\infty}^{\infty} c_n \int_0^L e^{2 \pi i n x / L} e^{2 \pi i m x / L}dx = \sum_{n = -\infty}^{\infty} c_n \int_0^L e^{2 \pi i (n - m) x / L} = Lc_m$$
+
+Therefore $$c_m = \frac{1}{L} \int_0^L f(x) e^{-2\pi imx/L} dx.$$
+
+This is the basis of the complex fourier series. To actually compute
+the fourier series, we must find each $c_m$ and present it in our
+output. 
+
+## The Discrete Fourier Series
+
+In practice, we cannot compute each of the infinite $c_m$, and it
+turns out we actually do not have enough information to do so. In
+almost all applications, we do not have $f(x)$, rather we have $N$
+evenly-spaced samples from $f(x)$ stored in a computer. Unfortunately,
+this limits how far out in frequency space we can get.
+
+For example, consider what happens to the set of samples when you are
+analyzing the coefficient of the frequency $N$. The function goes
+through one full period before it reaches the next point, so you are
+effectively applying a constant displacement to each point, the same
+effect as the frequency $n=0$. In general, each of the points will be
+effected in the same way for frequency $n$ as the frequency $n +N$,
+and we get no new infromation from analyzing beyond $n = N-1$.
+
+Therefore, in our output we are only looking for frequencies $0$
+through $N-1$. If we have $N$ points, we are looking for $N$
+frequencies, each computed via the discrete integral:
+
+$$ c(n) = \frac{1}{N} \sum_{x = 0}^{N-1} f(x) e^{-2\pi i n x /N}$$
+
+This is effectively computing the integral with a rectangular
+approximation $\frac{1}{L} \int_0^L f(x) e^{-2\pi i nx/L} dx \approx
+\frac{1}{L} \frac{L}{N} \sum_{x'=0}^{N-1} f(x') e^{-2\pi i n x' / N}.$
+where $x = L/N x'$.
+
+From here, I'm going to drop the normalizing term $\frac{1}{N}$ and
+assume it will be applied at the end. Also, it's much easier from this
+point to look at the fourier transform using a picture. We can imagine
+the discrete fourier transform as a circuit taking in the $N$ samples
+as input and then outputting the $N$ fourier coefficients as
+output. Below, this is depicted, with the inputs $f(x)$ coming in from
+the left, and the outputs $c(n)$ coming out to the right. Notice that
+each of the $N$ terms of the output needs to compute a sum of $N$
+terms, and therefore the total runtime of this circuit is $O(N^2)$.
+
+$$
+\begin{array}{ll|ccc|llll}
+\hline 
+f(0) & \rightarrow &  &  &  & \rightarrow & \frac{1}{8} \sum\limits_{x = 0}^{7} f(x) & = &  c(0)\\
+f(1) & \rightarrow &  &  &  & \rightarrow &  \frac{1}{8} \sum\limits_{x = 0}^{7} f(x) e^{-2\pi i x /8} & =&  c(1) \\
+f(2) & \rightarrow &  &  &  & \rightarrow & \frac{1}{8} \sum\limits_{x = 0}^{7} f(x) e^{-2\pi i 2 x /8} & =&  c(2)\\
+f(3) & \rightarrow &  & \mbox{Discrete Fouirer Transform} &  & \rightarrow &  \frac{1}{8} \sum\limits_{x = 0}^{7} f(x) e^{-2\pi i 3 x /8} & =&  c(3) \\ 
+f(4) & \rightarrow &  &  &  & \rightarrow & \frac{1}{8} \sum\limits_{x = 0}^{7} f(x) e^{-2\pi i 4 x /8} & =&  c(4)\\
+f(5) & \rightarrow &  &  &  & \rightarrow & \frac{1}{8} \sum\limits_{x = 0}^{7} f(x) e^{-2\pi i 5 x /8}  & =&  c(5)\\ 
+f(6) & \rightarrow &  &  &  & \rightarrow & \frac{1}{8} \sum\limits_{x = 0}^{7} f(x) e^{-2\pi i 6 x /8} & =&  c(6)\\
+f(7) & \rightarrow &  &  &  & \rightarrow &  \frac{1}{8} \sum\limits_{x = 0}^{7} f(x) e^{-2\pi i 7 x /8} & =&  c(7)\\ \hline
+\end{array}
+$$
+
+However, there does seem to be a fair bit of redundancy here. Each of
+these terms is a sum of the $f(x)$ terms, with a complex exponential
+slapped on, but the complex exponential is *periodic*. Take $c(0)$ and
+$c(4)$ for example. 
+
+$$ c(0) = \sum_{x = 0}^7 f(x) $$.
+
+$$ c(n) = \sum_{x = 0}^7 f(x) e^{-2\pi i 4 x /8} = \sum_{x = 0}^7 f(x)
+e^{-\pi i x} $$
+
+They are the same sum, except each term of $c(4)$ has an extra term of
+$e^{-\pi i x}$ slapped on. This term is going to be equal to 1 for
+even numbers of $x$ and equal to $-1$ for odd number of $x$. This
+behavior is independant of $n$: if we pair up any fourier coefficient
+with the coefficient that is $N/2$ indices up from it (for example 1
+and 5, 2 and 6, and 3 and 7), we will find the same relationship since
+
+$$ e^{-2\pi i (n + N/2) x / N} = e^{-2\pi i n  x / N} e^{\pi i x} .$$
+
+This suggests a strategy: there are really only $N$ terms to work out
+between $c(n)$ and $c(n + N/2)$ (instead of $2N$), we just need to
+remember to slap a -1 onto the odd terms for $c(n+N/2)$. This actually
+leads us to the next symmetry we can exploit. We can divide these two
+sums into 2 sums of the form "full sum" = "even terms" + "odd
+terms". I will do this out for the $N=8$ case but you will see how it
+can easily generalize. 
+
+For $c(n)$ this looks like:
+
+$$\begin{align} c(n)  =  \sum\limits_{x = 0}^{7} f(x) e^{-2\pi i n x /8} &= \overbrace{\sum\limits_{x = 0}^{4} f(2x) e^{-2\pi i n (2x) /8}}^{\mbox{even terms}} +  \overbrace{\sum\limits_{x = 0}^{4} f(2x + 1) e^{-2\pi i n (2x+1) /8}}^{\mbox{odd terms}} \\
+&= \sum\limits_{x = 0}^{4} f(2x) e^{-2\pi i n x /4} +  \sum\limits_{x = 0}^{4} f(2x + 1) e^{-2\pi i n x /4} e^{-\pi i n /4}.
+\end{align}$$ 
+
+For $c(n + N/2)$ this looks like: 
+
+$$\begin{align} c(n + N/2)  =  \sum\limits_{x = 0}^{7} f(x) e^{-2\pi i n x /8}e^{-\pi i x} &= \overbrace{\sum\limits_{x = 0}^{4} f(2x) e^{-2\pi i n (2x) /8}}^{\mbox{even terms}} -  \overbrace{\sum\limits_{x = 0}^{4} f(2x + 1) e^{-2\pi i n (2x+1) /8}}^{\mbox{odd terms}} \\
+&= \sum\limits_{x = 0}^{4} f(2x) e^{-2\pi i n x /4} -  \sum\limits_{x = 0}^{4} f(2x + 1) e^{-2\pi i n x /4} e^{-\pi i n /4}.
+\end{align}$$ 
+
+The two terms in the resulting equation have remarkable symmetries to
+the original problem: they are the Fourier transform of the function
+using only $N/2$ samples, one using the even indexed samples, the
+other using the odd indexed samples. Define two new variables for each
+$n$ accordingly:
+
+$$ \begin{align}
+c_e(n) &= \sum\limits_{x = 0}^{4} f(2x) e^{-2\pi i n x /4} \\
+c_o(n) &= \sum\limits_{x = 0}^{4} f(2x + 1) e^{-2\pi i n x /4},
+\end{align}$$
+
+we immediately see that 
+
+$$ \begin{align} c(n)& = c_e(n) + c_o(n) e^{-\pi i n/4} \quad \mbox{ and} \\
+c(n + N/2)& = c_e(n) - c_o(n) e^{-\pi i n/4}.
+\end{align}$$
+
+This relationship underlies the "butterfly diagram" that the FFT
+algorithm is known for. Updating our circuit with $f_e(x) = f(2x)$ and
+$f_o(e) = f(2x+1)$:
+
+$$\begin{array}{llll|ccc|llll||l}
+\hline 
+f(0) & = & f_e(0) & \rightarrow &  &  &  & \rightarrow & \sum\limits_{x = 0}^{3} f_e(x) & = &  c_e(0) & c(0) = c_e(0) + c_o(0)\\
+f(2) & = & f_e(1) & \rightarrow &  & \mbox{Discrete Fouirer Transform} &  & \rightarrow &   \sum\limits_{x = 0}^{3} f_e(x) e^{-2\pi i x /4} & =&  c_e(1) & c(1) = c_e(1) + c_o(1) e^{-\pi i / 4}\\
+f(4) & = & f_e(2) & \rightarrow &  &  &  & \rightarrow & \sum\limits_{x = 0}^{3} f_e(x) e^{-2\pi i 2 x /4} & =&  c_e(2) & c(2) = c_e(2) + c_o(2) e^{-2 \pi i / 4}\\
+f(6)  & = & f_e(3) & \rightarrow &  &  &  & \rightarrow &  \sum\limits_{x = 0}^{3} f_e(x) e^{-2\pi i 3 x /4} & =&  c_e(3) & c(3) = c_e(3) + c_o(3) e^{-3 \pi i /4} \\  \hline
+f(1)  & = & f_o(0) & \rightarrow &  &  &  & \rightarrow &  \sum\limits_{x = 0}^{3} f_o(x) & =&  c_o(0) & c(4) = c_e(0) - c_o(0)\\
+f(3) & = & f_o(1)& \rightarrow &  & \mbox{Discrete Fouirer Transform} &  & \rightarrow & \sum\limits_{x = 0}^{3} f_o(x) e^{-2\pi i x /4}  & =&  c_o(1) & c(5) = c_e(1) - c_o(1)e^{-\pi i / 4} \\ 
+f(5) & = & f_o(2) & \rightarrow &  &  &  & \rightarrow &  \sum\limits_{x = 0}^{3} f_o(x) e^{-2\pi i 2 x /4} & =&  c_o(2) & c(6) = c_e(2)  - c_o(2) e^{-2\pi i /4} \\
+f(7) & = & f_o(3) & \rightarrow &  &  &  & \rightarrow &  \sum\limits_{x = 0}^{3} f_o(x) e^{-2\pi i 3 x /4} & =&  c_o(3) & c(7) = c_e(3)  - c_o(3) e^{-3\pi i /4} \\ \hline
+\end{array}$$
+
+We can continue to do this process recursively until we hit the
+trivial base case of a fourier transfom with one sample. The number of
+times we will recursively call the algorithm is equal to $\log N$,
+because each time the number of terms left in each gets divided by
+two. At each level of the division, we do $N$ constant-time
+recombinations of the terms in the previous level. Therefore the
+asymptotic performance of this algorithm should be $O(N \log N)$, much
+faster than $O(N^2)$.
+
+Let's code this up and compare runtimes. Again we are going to assume
+that our input is always going to be a power of two in length. At
+level $l$ back, there are going to be $2^l$ fourier transforms to
+compute, each with $N/2^l$ samples. Indexing the output is a lot of
+fun, in the dwarf fortress sense, as you can see by the following
+table:
+
+| Level   |      x      |  Indices |
+|:----------|:------------:|------:|
+| 0  | 0:7  | $\{x\}$ |
+| 1 |    0:3   |   $\{2x\}$, $\{2x+1\}$ |
+| 2 | 0:1 |    $\{2(2x)\}$, $\{2(2x) + 1\}$, $\{2(2x + 1)\}$, $\{2(2x+1) + 1\}$ |
+
+In general the set of indices at any level of the recursion are going
+to be $\{2^lx +n\}$. Each seperate fourier transform has a different
+value of $n$, and for it $x$ ranges between $0$ and $N/2^l$. I suggest
+working this out yourself to truly grok it.
+
+## Implementation
+
+```{r}
+fast.fourier.transform <- function(f) {
+ N <- length(f)
+ levels <- log(N, 2)
+
+ prev.level <- f
+ level <- complex(real = numeric(length(f)))
+
+ for(l in (levels-1):0) {
+  for(n in 0:(2^l - 1)) {
+   half.num.indices <- 2^(levels - l - 1)   
+   for(x in 0:(half.num.indices - 1)) {
+    ##     One catch here to be aware of: in the circuit diagram above, the two
+    ## seperate fourier transforms have been placed as if their indices are
+    ## together, for ease of reading. In the implementation, these indices
+    ## are going to be interleaved, i.e. $c_e(0)$ at $i=0$, $c_o(0)$ at $i=1$
+    ## and so on. Therefore we vary x up to half of the indices, with evens=2x
+    ## and odds=2x+1. FUN!
+    level[2^l * x + n + 1] = prev.level[2^(l) * (2*x) + n + 1] + prev.level[2^l * (2*x+1) + n + 1] * exp(complex(imaginary = -pi*x/half.num.indices))
+    level[2^l * (x + half.num.indices) + n + 1] = prev.level[2^l * (2*x) + n + 1] - prev.level[2^l * (2*x + 1) + n + 1] * exp(complex(imaginary = -pi*x/half.num.indices))
+   }
+  }
+  prev.level <- level
+ }
+ level
+}
+
+slow.fourier.transform <- function(f){
+ N <- length(f)
+ result <- numeric(N)
+ for(n in 0:(N-1)) {
+  for(x in 0:(N-1)) {
+   result[n+1] = result[n+1] + f[x+1] * exp(complex(imaginary = -2*pi * x * n / N))
+  }
+ }
+ result
+}
+```
+
+## Testing
+
+Let's test these two functions. Do they give the correct result? Is
+the fast fourier transform really faster? For the first question, I'm
+going to test out the two new series against very simple fourier
+series compositions, and also against `R`'s `fft` function. For the
+second question I will test the runtimes with several different length
+transforms and then compute the relationship between log time and log
+length. The slow fourier transform should have a slope of 2, the fast
+fourier transform should have a slope that is only slightly higher than 1.
+
+What are 4 simple series to test. How about, for $x=0..15$:
+
+1. **Function 1:** $f(x) = \sin(\frac{2\pi}{16} x)$
+2. **Function 2:** $f(x) = \sin(\frac{2\pi}{16} x) - \cos(\frac{2\pi}{16}3 x) + \sin(\frac{2\pi}{16} 6 x)$
+3. **Function 3:** $f(x) = \sum_{n = 0}^{15} n \sin(\frac{2 \pi }{16}n x)$
+4. **Function 4:** $f(x) = \sum_{n = 0}^{15} \sin(\frac{2\pi}{16} n )\sin(\frac{2 \pi}{16}n x)$
+ 
+```{r, message = FALSE, warning = FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+plot_theme <- theme(panel.background = element_blank(), 
+                    panel.grid.major = element_line(color = "grey90", size = 0.2),
+                    panel.grid.minor = element_line(color = "grey95", size = 0.5),
+                    strip.text.x = element_text(color = "white"), 
+                    strip.background = element_rect(fill = "black"), 
+                    axis.text = element_text(color = "black"), 
+                    axis.title = element_text(face = "bold"), 
+                    title = element_text(face = "bold"))
+
+
+## Here are the functions we want to test, they should have very clear fourier transforms
+function.1 <- function(x) sin(2*pi*x/16)
+function.2 <- function(x) sin(2*pi*x/16) - cos(2*pi*3*x/16) + sin(2*pi*6 * x/16)
+function.3 <- function(x) sapply(x, function(s) sum(sapply(0:15, function(n) n* sin(2*pi*n*s/16))))
+function.4 <- function(x) sapply(x, function(s) sum(sapply(0:15, function(n) sin(2*pi*n/16)* sin(2*pi*n*s/16))))
+
+tests <- list("Function 1" = function.1, "Function 2" = function.2, "Function 3" = function.3, "Function 4" = function.4)
+
+## for each of these function, we want to apply the function
+test.data <- bind_rows(lapply(1:length(tests), function(i) {
+ fun <- tests[[i]]
+ name <- names(tests)[[i]]
+ x <- 0:15
+ bind_rows(
+  data.frame(x = x, y = fun(x), func = name, transform = "None"),
+  data.frame(x = x, y = abs(fft(fun(x))), func = name, transform = "fft"),
+  data.frame(x = x, y = abs(slow.fourier.transform(fun(x))), func = name, transform = "slow.fourier.transform"),
+  data.frame(x = x, y = abs(fast.fourier.transform(fun(x))), func = name, transform = "fast.fourier.transform"))
+}))
+
+test.data$transform <- factor(test.data$transform, levels = c("None", "slow.fourier.transform", "fast.fourier.transform", "fft"))
+
+ggplot(data = test.data, aes(x=x, y = y)) + geom_point() + facet_grid(func~transform, scale = "free") + theme_bw()
+```
+
+As you can see via the above plot, the code that we've written agrees
+with R's built in `fft` function, which is good. Also good is that it
+gives the output that we expect.
+
+You might be wondering why the first row of plots contain two non-zero
+dots each - wasn't there just one frequency included ($n=1$)? Remember
+that to put in this function, we used $\sin(x) = (e^{ix} -
+e^{-ix})/2i$, the other point that shows up is the "negative"
+frequency which has show up on the other side due to the periodic
+symmetry of the complex exponential. 
+
+## Timing
+
+Now let's time the functions against several different length inputs
+and see how they behave as the length of the sequences get large.
+
+```{r, cache = TRUE}
+sequence.lengths <- sapply(0:13, function(x) 2^x)
+
+timing.test <- data.frame(
+ length = sequence.lengths,
+ slow = sapply(sequence.lengths, function(l) { dat <- 0:l; system.time({slow.fourier.transform(dat)})[["elapsed"]]}),
+ fast = sapply(sequence.lengths, function(l) { dat <- 0:l; system.time({fast.fourier.transform(dat)})[["elapsed"]]}),
+ fft = sapply(sequence.lengths, function(l) { dat <- 0:l; system.time({fast.fourier.transform(dat)})[["elapsed"]]}))
+timing.test <- gather(timing.test, func, time, slow, fast, fft)
+```
+
+Normal plot:
+
+```{r}
+ggplot(data = timing.test, aes(x = length, y = time, color = func)) + geom_point() + theme_bw()
+``` 
+
+Log-Log-plot:
+
+```{r}
+ggplot(data = timing.test, aes(x = log(length), y= log(time), color = func)) + geom_point() + theme_bw() + geom_smooth(method = "lm") + coord_fixed(ratio = 1)
+``` 
+
+Linear models on the log-log data
+
+```{r}
+slow <- subset(timing.test, func %in% "slow" & time != 0)
+fast <- subset(timing.test, func %in% "fast" & time != 0)
+fft <- subset(timing.test, func %in% "fft" & time != 0)
+
+lm.slow <- lm(log(time) ~ log(length), data = slow)
+lm.slow
+lm.fast <- lm(log(time) ~ log(length), data = fast)
+lm.fast
+lm.fft <- lm(log(time) ~ log(length), data = fft)
+lm.fft
+```
+
+Via the coefficient on `log(length)` we see that the slow version has
+slope approximately equal to 2, and the fast version has slope
+slightly greater than one. I'm especially suprised that my version in
+plain R seems to perform nearly as fast as R's native `fft` function,
+which I had assumed was programmed in optimized C. Thus we have
+derived the a way in which the discrete fourier transform can be
+computed $O(N\log N)$.
+
+## Further Reading
+
+Gilbert Strang gives a really good lecture on the fast-fourier
+transform, using matrix factorization which I didn't cover
+here. (Unfortunately lost me around
+37:25). [link](https://www.youtube.com/watch?v=M0Sa8fLOajA)
+
+
+## Citations
+
+[1] Fourier, Joseph (1822). Théorie analytique de la chaleur (in
+French). Paris: Firmin Didot Père et Fils. OCLC
+2688081. [link](http://www3.nd.edu/~powers/ame.20231/fourier1878.pdf)
+
+[2] Cooley, James W.; Tukey, John W. (1965). "An algorithm for the
+machine calculation of complex Fourier series". Math. Comput. 19:
+297–301. doi:10.2307/2003354. [link](https://web.njit.edu/~jiang/math614/cooley-tukey.pdf)
+
+[3] Cooley, J. W. (1987). The re-discovery of the fast Fourier
+transform algorithm. Microchimica Acta, 93(1-6),
+33-45. [link](https://carma.newcastle.edu.au/jon/Preprints/Talks/CARMA-CE/FFT.pdf)
+
+[4] Cooley, Lewis, and Welch. Historical Notes on the Fast Fourier
+Transform. IEEE Trans. Audio Electroacousitcs vol AU-15,
+pp.76-79. June 1967. [link](http://www.signallake.com/innovation/FFTHistoryJun67.pdf)
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>

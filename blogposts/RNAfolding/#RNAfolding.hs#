@@ -1,0 +1,139 @@
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE TypeFamilies              #-}
+import Data.Array
+import Data.Time.Clock.POSIX 
+import Data.Colour
+import System.Random
+import Data.List
+import Diagrams.Prelude
+import Diagrams.Backend.SVG.CmdLine
+
+data Structure = Paired Char Char (Structure, Structure) |
+                 Slip Char Structure |
+                 None
+               deriving Show
+
+testStrand :: String
+testStrand = "GAAACCCCUUUUGGGG"
+
+baseEnergy :: Char -> Char -> Double
+baseEnergy a b = case (a, b) of
+  ('A', 'U') -> -4.6
+  ('G', 'C') -> -6.9
+  ('U', 'A') -> -4.6
+  ('C', 'G') -> -6.9
+  otherwise -> 1.0/0.0 -- non-allowed pairs treated like an infinite hill
+
+energyModel :: Structure -> Double
+energyModel (Paired a b (s1,s2)) =
+  (baseEnergy a b) + -- energy of pair
+  (energyModel s1) + -- energy of substructure under pair
+  (energyModel s2) -- energy of substructure after pair
+energyModel (Slip _ s) = energyModel s
+energyModel None = 0 
+
+type PFunArray = Array (Int, Int) Double
+
+boltz :: Double -> Double
+boltz x = exp (-x)
+
+partitionFunction :: String -> PFunArray
+partitionFunction strand = arr                           
+  where
+    len = length strand
+    arr = array ((0,0), (len - 1, len - 1))
+          [((i,j), (pfCell i j strand arr)) | i <- [0..len-1], j <- [i..len-1]]
+
+pfCell :: Int -> Int -> String -> PFunArray -> Double
+pfCell i j strand arr = if (i==j) then 1 else (sum pairTerms) +  slipTerm
+  where
+    pairTerm i k = boltz (baseEnergy (strand !! i) (strand !!k)) *
+                   (if k-i > 2 then arr ! (i+1, k-1) else 1) *
+                   (if j-k > 1 then arr ! (k+1, j) else 1)
+    pairTerms = [pairTerm i k | k <- [(i+1)..j]]
+    slipTerm  = if i == j then 1 else arr ! (i+1, j)
+
+sampleStructure :: Int -> Int -> PFunArray -> String -> StdGen -> Structure
+sampleStructure i j arr strand gen = if (i > j) then None else struct
+  where
+    -- setup pair terms
+    pairTerm i k = boltz (baseEnergy (strand !! i) (strand !! k)) *
+                   (if k-i > 2 then arr ! (i+1, k-1) else 1) *
+                   (if j-k > 1 then arr ! (k+1, j) else 1)
+    pairTerms = [pairTerm i k | k <- [(i+1)..j]]
+    
+    -- structure functions
+    slipStructure genr = Slip (strand !! i) (sampleStructure (i+1) j arr strand genr)
+    innerPairStructure k genr = if k - i > 1 then  sampleStructure (i+1) (k-1) arr strand genr else None
+    outerPairStructure k genr = if j - k > 0 then sampleStructure (k+1) (j) arr strand genr else None                                           
+    pairStructure k genr = Paired (strand !! i) (strand !! k) (innerPairStructure k genr, outerPairStructure k genr)
+    
+    -- (cumulative probability, structure) pairs
+    slipCase = (0, slipStructure) -- starting at offset of 0 
+    pairCases = [(sum (take (k-i-1) pairTerms) + arr ! (i+1, j), pairStructure k) | k <- [(i+1)..j]]
+    allCases = slipCase:pairCases
+
+    -- sample a random number according to the current sub
+    (roll, newgen) = randomR (0, arr ! (i, j)) gen
+    -- if roll >= cumulative probability switch canidates, else not
+    checkCase current candidate = if roll >= (fst candidate) then (snd candidate) newgen else current 
+    struct = foldl' checkCase None allCases
+
+sample = do
+  gen <- getStdGen
+  let rna = "GAAAAAAGGGGAAAACCCCAAAAAA"
+  let pf = partitionFunction rna
+  let struct = sampleStructure 0 (length rna - 1) pf rna gen
+  return struct
+
+colorMap a = case a of
+  'G' -> sRGB24read "#107896"
+  'C' -> sRGB24read "#829356"
+  'U' -> sRGB24read "#F26D21"
+  'A' -> sRGB24read "#C02F1D"
+  otherwise -> white
+
+base :: Char -> Diagram B
+base b = circle 1 # fc (colorMap b) <>
+  text [b] # fontSize (local 2) # (translateY (-2.6))
+backbone = hrule 1
+
+isNone :: Structure -> Bool
+isNone s = case s of
+  None -> True
+  otherwise -> False
+
+structLength :: Structure -> Int
+structLength None = 0
+structLength (Slip _ s) = 1 + structLength s
+structLength (Paired _ _ (s1, s2)) = 2 + structLength s1 + structLength s2
+
+renderStructure :: Structure -> Diagram B
+renderStructure (Paired a b (s1, s2)) =  
+  base a <>
+  translateX 1.5 backbone <>
+  translateX 3 innerElement <>
+  translateX (3.0*k') (base b) <>
+  translateX (3.0*k'+3) outerElement <>
+  arc xDir (0.5 @@ turn) # scale (1.5*k') # translateX (1.5*k')
+  where
+    k = structLength s1 + 1
+    k' = fromIntegral k
+    innerElement =  if isNone s1 then mempty else renderStructure s1 ||| backbone
+    outerElement =  if isNone s2 then mempty
+      else  translateX (-1.5) backbone <>
+            renderStructure s2
+renderStructure (Slip c s) = if isNone s then base c else base c <>
+  translateX 1.5 backbone <>
+  translateX 3 (renderStructure s)
+renderStructure None = mempty
+
+main = do
+  let gen =  mkStdGen 42
+  let rna = "GAAAAAAGGGGAAACCAAAGCCCAAUUUGCUUUUAAAAGGCCAA"
+  let pf = partitionFunction rna
+  let struct = sampleStructure 0 (length rna - 1) pf rna gen
+  let diagram = renderStructure struct
+  mainWith diagram
+

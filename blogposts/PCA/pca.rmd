@@ -1,0 +1,393 @@
+---
+output:
+    html_fragment
+---
+
+## Introduction
+
+Data science is a big word these days. It wows crowds, it stirs the
+imagination! If you are a startup, dropping "data science" can get you
+applause and funding without even needing to elaborate! 
+
+"We've got several projects coming down the pipeline: data science,
+deep learning, and *cloud computing*."
+
+"Wow, have some money."
+
+This has happened in real life. You might be suprised to learn that
+there is actually useful tools in the field outside of just
+marketing. Principle component analysis is an incredibly useful tool
+for finding the <em>things</em> in your data. Why might you do this?
+Well..
+
+This tutorial is based on a [tutorial by Jonathan
+Shlens](https://arxiv.org/pdf/1404.1100v1.pdf), expanded to be
+"interactive" using R-markdown and I've approached the solution a
+little differently, from a direction I think is a little
+clearer. Also, halfway through writing this I stumbled across [this
+Cross Validated
+question.](http://stats.stackexchange.com/questions/2691/making-sense-of-principal-component-analysis-eigenvectors-eigenvalues)
+Look at that too, I just thought it was a cool post.
+
+
+What is principle component analysis? In concrete terms, principle
+component analysis is way to rotate your data's coordinate system into
+the *most important* directions.
+
+## Obfuscation
+
+A key example of PCA (lifted from the parent article) is a ball on a
+string who's position is recorded by several different cameras. The
+balls motion might be described as $$x(t) = x_0 cos(\omega t)$$ around
+the equilibrium point, $x_0$ being the initial stretched length and
+$\omega$ being the frequency. For a standard spring, $\omega$ is
+related to the ratio of the spring constant to the mass of the ball
+($\omega = \sqrt{\frac{k}{m}}$), but to make things easy, I'm going to
+plot $t$ in units of $1/\omega$ and $x$ in units of $x_0$. That way,
+the equation of motion just becomes $$x(t) = cos(t).$$ I can model
+this in R.
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr) 
+theme_set(theme_bw()) # set default theme to black-white
+t <- seq(0, 6*pi, by = .1)
+x <- cos(t)
+qplot(x = t, y = x) 
+```
+
+So this is how the position $x$ varies in time, between 1 and -1 of
+$x_0$, with a period of $2\pi \omega$. However, we are in the real
+world, and the real world has 3 spatial dimentions. Therefore I am
+going to add a $y$ and $z$ to these points. Not only that, but the
+real world has **noise** as well. I'm going to mix in a little bit of
+noise, in every direction, with standard deviation about 1/10th the
+amplitude of the wave.
+
+```{r}
+positions <- data.frame(t = seq(0, 6*pi, by = .1),
+                        x = x + rnorm(length(x), sd = .1),
+                        y = rnorm(length(x), sd = .1),
+                        z = rnorm(length(x), sd = .1))
+
+ggplot(data = gather(positions, variable, value, x:z), aes(x = t, y = value)) +
+    geom_point() +
+    facet_wrap(~ variable, nrow = 1) 
+```
+
+Above we can see 3 relationships, one of (mostly) signal, 2 with just
+noise. We've expanded our coordinates to 4 variables, but really only
+2 of them are important, $x$ and $t$.
+
+Now let's say *foolish scientists* have set up 3 cameras to observe
+this process, trying to discover the relationship between the
+variables. They do not have priviledged access to the coordinate
+system that we know of, where the $x$ direction contains the entire
+relationship. Rather, for each camera they get two coordinates: the
+$x$ and $y$ of the ball's location in the camera's image plane. What
+does this experiment look like to these scientists?
+
+The first thing to do is express the data in terms of each cameras $x$
+and $y$. Well, let's assume the cameras are all directly pointed at
+the origin (of our coordinate system) to capture all the action. I am
+going to assert (and you can prove to yourself) that a camera's image
+plane coordinates can be expressed by picking two directions out of a
+rotated and scaled version of the original, experiment coordinate
+system. So to get the coordinates for each camera, I'm going to pick a
+random rotation and scaling (foreshadowing...), and pick the first two
+directions that result.
+
+How do I describe this process mathematically? Our current coordinate
+system has 3 basis vectors:
+
+$$ \mathbf{ \hat x} = \begin{bmatrix} 1 \\ 0 \\ 0 \end{bmatrix},
+\ \mathbf{\hat y} = \begin{bmatrix} 0 \\ 1 \\ 0 \end{bmatrix}, 
+\mbox{ and } \mathbf{ \hat z} = \begin{bmatrix} 0 \\ 0 \\ 1 \end{bmatrix}$$
+
+Our new coordinate system is going to have 3 new basis vectors
+$\mathbf {\hat e_1}$, $\mathbf{\hat e_2}$, and $\mathbf {\hat
+e_3}$. Each of these can be represented as a linear combination of the
+experiment basis vectors $$\mathbf {\hat e_i} = t_{ix} \mathbf {\hat
+x} + t_{iy} \mathbf {\hat y} + t_{iz} \mathbf {\hat z}.$$ A coordinate
+in this new basis can therefore be represented as a matrix
+transformation on the original coordinates:
+
+$$\begin{aligned}
+\mathbf{\vec r} &= \begin{bmatrix} e_1 \\ e_2 \\ e_3 \end{bmatrix}_{\mathbf e}\\ 
+&= e_1 \mathbf {\hat e_1} + e_2 \mathbf {\hat e_2} + e_3 \mathbf {\hat e_3} \\
+&= e_1 (t_{1x} \mathbf {\hat x} + t_{1y} \mathbf {\hat y} + t_{1z}\mathbf {\hat z}) + e_2 (t_{2x} \mathbf {\hat x} + t_{2y} \mathbf {\hat y} + t_{2z}\mathbf {\hat z})  + e_3 (t_{3x}\mathbf {\hat x} + t_{3y}\mathbf {\hat y} + t_{3z}\mathbf {\hat z}) \end{aligned}$$
+
+$$ \mathbf B = \begin{bmatrix} \hat x \\ \hat y \\ \hat z \end{bmatrix} = 
+\begin{bmatrix} 1 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & 1 \end{bmatrix} = \mathbf I.
+$$
+
+One side note: In the process of writing this post, I discovered that
+generating a random 3D-rotation is actually super annoying. I spent a
+little bit of time trying to tie the concept down and this is what
+I've come up with: a rotation can be uniquely specified by an axis and
+an angle to rotate around that axis. You can read about all that
+[here](http://math.stackexchange.com/questions/442418/random-generation-of-rotation-matrices)
+and
+[here](https://en.wikipedia.org/wiki/Rotation_matrix#Conversion_from_and_to_axis-angle),
+or you can just steal my code.
+
+```{r} 
+
+## random 3d rotation matrix
+random.rotation.matrix <- function(seed) { 
+ set.seed(seed)
+ 
+ ## angle around vector to rotate
+ psi <- runif(1, max = 2*pi)
+
+ ## select a random point on S^2
+ phi <- runif(1, max = 2*pi)
+ theta <- acos(2 * runif(1) - 1)
+
+ ## construct axis from random S^2 point
+ axis <- c(cos(theta)*cos(phi),
+          cos(theta)*sin(phi),
+          sin(theta))
+
+ ## cross product matrix for formula
+ axis.cp <- matrix(c(0, -axis[3], axis[2],
+                     axis[3], 0, -axis[1],
+                     -axis[2], axis[1], 0), nrow = 3, byrow = TRUE)
+
+ ## create rotation matrix using wikipedia formula
+ R <- cos(psi) * diag(c(1,1,1)) +
+      sin(psi) * axis.cp +
+      (1-cos(psi)) * outer(axis, axis) 
+
+ R
+} 
+```
+
+I've tested the above function and it does seem to create random
+rotations. So let's go ahead an find the new coordinates! 
+
+```{r}
+new.camera.data <- function(positions, seed ) { 
+ set.seed(seed)
+ ## original data
+ original.coordinates <- t(as.matrix(select(positions, x,y,z)))
+
+ ## get scale
+ scale <- 1/rexp(1, 1/3)
+ 
+ ## get rotation
+ rotation <- random.rotation.matrix(seed)
+ 
+ ## new points
+ new.points <- t(scale * rotation %*% original.coordinates)
+ 
+ ## project
+ image.plane.projection <- new.points[,1:2]
+
+ list(scale = scale, rotation = rotation, data = image.plane.projection)
+}
+
+camera.1 <- new.camera.data(positions, 1)
+camera.2 <- new.camera.data(positions, 2)
+camera.3 <- new.camera.data(positions, 3)
+
+camera.data = data.frame(t = seq(0, 6*pi, by = .1),
+                         x1 = camera.1$data[,1],
+                         y1 = camera.1$data[,2],
+                         x2 = camera.2$data[,1],
+                         y2 = camera.2$data[,2],
+                         x3 = camera.3$data[,1],
+                         y3 = camera.3$data[,2])
+                        
+```
+
+Fun exercise: see if you can reconstruct the camera's position and
+orientation from the rotation matrix and scale. Now what does the data
+look like:
+
+```{r}
+ggplot(data = gather(camera.data, variable, value, x1:y3), aes(x = t, y = value)) +
+    geom_point() +
+    facet_wrap(~ variable, nrow = 2) 
+
+```
+
+What? It looks like there are several signals here. How do the
+scientists tell what is what? That's where principal component
+analysis comes in. PCA is going to isolate the true signal from all of
+these redundant copies. We shall soon see.
+
+## Finding the Principle Components
+
+So how does PCA actually work? Let's first consider the problem we are
+trying to solve. We want to find the *principal components*, the most
+important directions to point in. What makes a direction important?
+This leads up to a key assumption of PCA:
+
+**Key Assumption:** The most important directions to point in are
+  the directions in which the data *varies most*.
+
+Note that this implicitly assumes that the signal, to noise ratio,
+$$SNR = \frac{\sigma_{signal}^2}{\sigma_{noise}^2} > 1.$$ Only then will
+the signal directions will be expected to be the directions of
+greatest variation. It many real-world applications, for example
+stock price forecasting, the noise overwhelms the signal. It would be
+an interesting exercise to see how this simple example breaks down as
+you add noise.
+
+So we now we have the idea of variation in our minds. How do we
+measure it? Two quantities come to mind, the variance and
+covariance. Consider two sets of measurements $$ \mathbf a = \{a_1,
+a_2,..., a_n\} \quad \mbox{ and } \quad \mathbf b = \{b_1,
+b_2,...,b_n\} $$ with means of $\mu_a$ and $\mu_b$, respectively. The
+variance and covariance are defined as average distances to the means:
+$$ \mbox{Var}(\mathbf a) = \sigma_{\mathbf a}^2 = \frac{1}{n}
+\sum_i(a_i - \mu_a)^2$$ $$ \mbox{Cov}(\mathbf a, \mathbf b) =
+\sigma_{\mathbf{ab}}^2 = \frac{1}{n} \sum_i(a_i - \mu_a)(b_i -
+\mu_b).$$
+
+
+Note that the variance is equal to the covariance of a variable with
+itself, $\mbox{Var}(\mathbf{a}) = \mbox{Cov}(\mathbf a, \mathbf
+a)$. Let $\mathbf a' = \mathbf a - \mu_a$, it is easy to see that $$
+\mbox{Cov}(\mathbf a, \mathbf b) = \frac{1}{n} \mathbf a' \cdot b'.$$
+This suggests that is we have some matrix of measurements $\mathbf X$
+with each row a single entry, we can make a matrix of covariances by
+matrix multiplication with its transpose:
+
+$$ \mathbf C = \frac{1}{n} \mathbf X^T \mathbf X$$ 
+
+Let's do this now with our camera measurments in R.
+
+```{r}
+options(width = 120)
+measurements <- select(camera.data, -t)
+measurements <- mutate_each(measurements, funs(. - mean(.)))
+measurements <- as.matrix(measurements)
+covariance.matrix <- t(measurements) %*% measurements / nrow(measurements)
+
+covariance.matrix
+```
+
+So we've effectively measured the variance in every direction. The
+next step is to find a coordinate system that *diagonalizes* this
+matrix. 
+
+Why do we want to diagnolize? The reason is conspicuously absent from
+the Shen paper. There's actually an intuitive reason - we want our
+coordinate system to have directions that point in the directions of
+largest variance. Any covariance
+
+To do PCA, you have to know what question it is asking and what
+problem it is solving. PCA is solving an optimization problem. We are
+trying to find a set of directions that maximizes the variance of the
+data. Expressing this mathematically, we are trying to solve the
+problem: $$ \mbox{maximixe Var}(\mathbf{X} u_j) \quad \mbox{such that }
+||u_j|| = 1.$$
+
+Sequentially so that $u_i \cdot u_j = 0$.
+
+Remember that the variance can be expressed in terms of the transpose, i.e.
+
+$$ \mbox{Var}(\mathbf{X} u_i) = \frac{1}{n}(\mathbf{X} u_i)^T (\mathbf{X}  u_i) =  u_i^T (\frac{1}{n} \mathbf{X}^T \mathbf{X})  u_i =  u_i^T \mathbf{C}  u_i. $$
+
+Therefore we are trying find a $u$ that maximizes the matrix product
+with the covariance matrix, $u^T \mathbf C u$. To solve this problem,
+we're going to bring in eigenvectors! Remember that $\mathbf C$ is a
+square, symmetric matrix, and its set of eigenvectors $\{v_1,
+v_2,\dots, v_r\}$ span it's column and row spaces. Therefore we can
+express $u$ as some sum the eigenvectors of $\mathbf C$:
+
+$$ u =  a_1 v_1 + a_2 v_2 + \dots + a_r v_r.$$
+
+Since $u$ is a unit vector we must have that $\sum a_i = 1$ and each
+$a_i >=0$. i.e. $a$ is a point on the simplex (foreshadowing...). What
+happens when we make this substitution into the space we are trying to
+optimize?
+
+$$ \mbox{Let's Max(} u^T \mathbf C u \mbox{)!!}$$
+
+$$\begin{align} u^T \mathbf C u &= (a_1v_1^T + a_2 v_2^T + \dots + a_r v_r^T) \mathbf C 
+(a_1 v_1 + a_2 v_2 + \dots + a_r v_r) \\
+&= (a_1v_1^T + a_2 v_2^T + \dots + a_r v_r^T)
+ (a_1 \mathbf C v_1 + a_2 \mathbf C v_2 + \dots + a_r \mathbf C v_r) \\
+&= (a_1v_1^T + a_2 v_2^T + \dots + a_r v_r^T)
+ (a_1 \lambda_1 v_1 + a_2 \lambda_2 v_2 + \dots + a_r \lambda_r v_r) \\
+&= a_1^2 \lambda_1 + a_2^2 \lambda_2 + \dots + a_r^2 \lambda_r\end{align}$$
+
+This is very interesting. Let $$\{\alpha_1, \alpha_2, ..., \alpha_r \} = \{a_1^2, a_2^2, ..., a_r^2\}, $$
+we are trying to solve an optimization of the form
+$$\begin{align}
+\mbox{Maximize} \quad \alpha_1 \lambda_1 + &\alpha_2 \lambda_2 + \dots + \alpha_r \lambda_r \\
+\mbox{Subject to} \quad \sum_i \alpha_i &= 1 \\
+ \mbox{All } \alpha_i & \geq 0
+\end{align}$$
+
+It will immediately be apparent to people familiar with the problem
+that this is a linear programming problem, solvable with the simplex
+algorithm, and in this case eyeballing, since all solutions will be on
+the *corners* of the space, where the inequalities are
+tight. Therefore the solutions are where $r-1$ $a$'s are 0, and
+exactly 1 $a_i = 1$. Looking at the optimization equation, the first,
+most important direction is going to be the $v_i$ with the largest
+$\lambda_i$, the second most important direction will be the second
+largest eigenvalue, and so on. So the directions of highest variance
+are the eigenvectors of the covariance matrix! Who would have thought?
+
+Where $u_i \cdot u_j = 0$ for $j < i$. Notice that this is pretty much
+equivalent to repeatedly finding the "best fit ray" and recursively
+doing the same operation on the residual. What solves this
+optimization problem? Well, turns out there is an interesting solution
+involving the Singular Value Decomposition.
+
+This assumes that all measurements are in comparable units. If you
+have one measurment that's in meters, and another measurment that is
+in micrometers for the same phenomenon, the measurement that is in
+micrometers is going to be one of the principle components, no matter
+what. 
+
+## Analyzing our obfuscated problem
+
+Some people use the singular SVD to get the eigenvectors and
+eigenvalues, I think that is unneccessary. If there is a deeper reason
+to use SVD, feel free to email me! I am curious. Here, I'm just
+going to use the R function `eigen` to grab the eigenvectors.
+
+First I'm going to look at the eigenvalues. I expect to see 1 large
+eigenvalue, and 5 much smaller values. What I'm going to do then is
+get the eigenvectors, project the data into that basis, and plot the
+results.
+
+```{r}
+important.directions <- eigen(covariance.matrix)
+important.directions$value
+```
+
+Waddaya know. The first eigenvalue is 100x bigger than the second,
+which is 100x bigger than the next, and so on.
+
+```{r}
+projected <- as.data.frame(measurements %*% important.directions$vector)
+colnames(projected) <- paste0("component", 1:6)
+projected$t <- camera.data$t
+
+plot.data <- gather(projected, component, value, component1:component6)
+ggplot(data = plot.data, aes(x = t, y = value)) + geom_point() +
+    facet_wrap(~component)
+```
+
+Boom. We've not only isolated the signal, we've isolated the one
+direction of significant noise! PCA has saved the scientists from the
+complicated analysis of 6 signals, and given them only one to work
+with. Problem solved. 
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>

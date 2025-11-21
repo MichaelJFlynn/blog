@@ -1,0 +1,1058 @@
+---
+output:
+    html_fragment
+---
+
+<head>
+  <meta charset="UTF-8">
+
+</head>
+
+*If you enjoy this post, subscribe using the form to the left! I try
+ to make new posts every weekend, though sometimes life gets in the
+ way. This one took 3 months!*
+
+Since my [last
+post](http://michaeljflynn.net/2017/03/20/history-and-derivation-of-the-fast-fourier-transform/)
+was on the fast Fourier transform I thought I would continue the theme
+of signal processing and write a post on wavelet analysis. However
+after looking over the subject for a couple ~~weekends~~ months I've
+decided to split this topic into several posts.
+
+This post is heavily informed by Gilbert Strang and Troung Nguyen's
+["Wavelets and Filter
+Banks"](https://www.amazon.com/gp/product/0961408871/ref=as_li_tl?ie=UTF8&camp=1789&creative=9325&creativeASIN=0961408871&linkCode=as2&tag=michaeljflynn-20&linkId=fa6c05a98fbcc82a73e0fa2faf0f03f8). To
+be honest, the book is hard to read, so I'll try to digest it the best
+I can for you here. Maybe I'm being hypocritical. I hope you can read
+this!
+
+# Introduction
+
+Like the Fourier transform, the wavelet transform outputs a different
+*representation* of a set of data. The original data is usually
+represented as a series of measurements in time. For example, in an
+audio recording the data is a time series of voltages across the
+capacitor plate of a microphone.
+
+```{r, echo = FALSE, warning = FALSE, messages = FALSE}
+library(dplyr);
+library(tidyr);
+
+data.frame(
+ "00:000000" = .10,
+ "00:000001" = .13,
+ "00:000002" = .15,
+ "..." = "...",
+ check.names = FALSE) %>% gather(Time, CapacitorVoltage) %>% print(row.names = FALSE)
+``` 
+
+The Fourier transform outputs a represention of the data as a
+combination of constant tones:
+
+```{r, echo = FALSE, warning = FALSE, messages = FALSE}
+data.frame(
+ "C-tone" = .1,
+ "D-tone" = .01,
+ "F-tone" = 0,
+ "..." = "...",
+ check.names = FALSE) %>% gather(Frequency, Volume) %>% print(row.names = FALSE)
+```
+
+Think of music. It might be more efficient to represent data as a set
+of tones than a series of millions of voltages. However, the Fourier
+Transform has a weird trait that it represents the signal as a series
+of *constant* tones that play the *entire length of the
+recording*. There is a math theorem that says any function can be
+fully represented in that way, but that's not how people think of
+music. Instead, people think of "notes" that happen at specific times
+in the recording, like sheet music. That is what the wavelet transform
+intends to represent. It would look something like this:
+
+```{r, echo = FALSE, warning = FALSE, messages = FALSE}
+data.frame(
+ Note = c("C-note", "D-note", "D-note", "..."),
+ Time = c("0", "0", "1", "..."),
+ Volume = c("1", "0", "1", "..."),
+ check.names = FALSE) %>% print(row.names = FALSE)
+```
+
+Representing certain types of data in this way is very
+efficient. Think of how sheet music is much easier to store than
+spreadsheets of billions of capacitor voltages. This is why many
+compression techniques for the web, like [JPEG
+2000](https://en.wikipedia.org/wiki/JPEG_2000), use it to send data
+efficiently over the wire without losing the "gist" of the image.
+
+So how do we actually transform data into this representation? We need
+some sort of operation that will give us a compromise between the
+perfect time-resolution of original representation and the perfect
+frequency resolution of the Fourier transform.
+
+What if I told you there already exists an operation that has both
+high-resolution in frequency and high resolution in time? It's an
+elementary circuit in analog electronics, called the [high-pass
+filter](https://en.wikipedia.org/wiki/High-pass_filter). The high pass
+filter takes a signal and filters out lower frequency components of
+that signal. An example output is illustrated below. I've drawn the
+results of a high-pass filter, labeled "HPF" and a complementary
+low-pass filter, labeled "LPF", with input coming from the right (same
+for both), and output going out to the left:
+
+<div style="width:100%; padding-top: 20px; padding-bottom: 10px;" align="center">
+<svg viewbox="-250 -25 500 50">
+     <g>
+     <rect x="-50" y="-25" width="100" height="50" stroke="black" fill="none"></rect>
+     <text x="-20" y="5" style="fill:black;" font-size="20">
+      HPF
+     </text>
+     </g>
+     <path stroke="lightgrey" stroke-dasharray="5,5" fill="none" d="M 50 0 h 200"></path>
+     <path stroke="lightgrey" stroke-dasharray="5,5" fill="none" d="M -250 0 h 200"></path>
+     <path class="inputPath" stroke="black" fill="none"></path>
+     <path class="outputPath" stroke="black" fill="none"></path>
+</svg>
+</div>
+<div style="width:100%; padding-bottom: 20px;" align="center">
+<svg viewbox="-250 -25 500 50">
+     <g>
+     <rect x="-50" y="-25" width="100" height="50" stroke="black" fill="none"></rect>
+     <text x="-20" y="5" style="fill:black;" font-size="20">
+      LPF
+     </text>
+     </g>
+     <path stroke="lightgrey" stroke-dasharray="5,5" fill="none" d="M 50 0 h 200"></path>
+     <path stroke="lightgrey" stroke-dasharray="5,5" fill="none" d="M -250 0 h 200"></path>
+     <path class="lpinputPath" stroke="black" fill="none"></path>
+     <path class="lpoutputPath" stroke="black" fill="none"></path>
+</svg>
+
+</div> 
+
+<script
+  src="https://code.jquery.com/jquery-3.2.1.min.js"
+  integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4="
+  crossorigin="anonymous"></script>
+<script> 
+function NormSInv(p) {
+    var a1 = -39.6968302866538, a2 = 220.946098424521, a3 = -275.928510446969;
+    var a4 = 138.357751867269, a5 = -30.6647980661472, a6 = 2.50662827745924;
+    var b1 = -54.4760987982241, b2 = 161.585836858041, b3 = -155.698979859887;
+    var b4 = 66.8013118877197, b5 = -13.2806815528857, c1 = -7.78489400243029E-03;
+    var c2 = -0.322396458041136, c3 = -2.40075827716184, c4 = -2.54973253934373;
+    var c5 = 4.37466414146497, c6 = 2.93816398269878, d1 = 7.78469570904146E-03;
+    var d2 = 0.32246712907004, d3 = 2.445134137143, d4 = 3.75440866190742;
+    var p_low = 0.02425, p_high = 1 - p_low;
+    var q, r;
+    var retVal;
+
+    if ((p < 0) || (p > 1))
+    {
+        alert("NormSInv: Argument out of range.");
+        retVal = 0;
+    }
+    else if (p < p_low)
+    {
+        q = Math.sqrt(-2 * Math.log(p));
+        retVal = (((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) / ((((d1 * q + d2) * q + d3) * q + d4) * q + 1);
+    }
+    else if (p <= p_high)
+    {
+        q = p - 0.5;
+        r = q * q;
+        retVal = (((((a1 * r + a2) * r + a3) * r + a4) * r + a5) * r + a6) * q / (((((b1 * r + b2) * r + b3) * r + b4) * r + b5) * r + 1);
+    }
+    else
+    {
+        q = Math.sqrt(-2 * Math.log(1 - p));
+        retVal = -(((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) / ((((d1 * q + d2) * q + d3) * q + d4) * q + 1);
+    }
+
+    return retVal;
+}
+
+jQuery(document).ready(function() {
+ var inputArray = Array.from(Array(256), () => 0);
+ var outputArray = Array.from(Array(256), () => 0);
+ var lpoutputArray = Array.from(Array(256), () => 0);
+
+ var inputPath = jQuery('.inputPath');
+ var outputPath = jQuery('.outputPath');
+ var lpinputPath = jQuery('.lpinputPath');
+ var lpoutputPath = jQuery('.lpoutputPath');
+ var inputY = 0;
+ var prevInputY = 0;
+ var cumY = 0;
+ var update = false;
+ setInterval(function() {
+  var passthrough = inputArray.shift();
+
+  lpoutputArray.shift();
+  lpoutputArray.push((inputY + prevInputY)/2);
+
+  prevInputY = inputY;
+  inputY = inputY + passthrough;
+
+  var newdiff = NormSInv(Math.random())*4 - cumY/15;       
+  cumY = cumY + newdiff;
+
+  inputArray.push(newdiff);
+  outputArray.shift(); 
+
+  outputArray.push(passthrough);                                      
+
+  var inputString = "M 50 0 m 0 " + inputY + " " + inputArray.map(function(e) { 
+   return "l .78125 " + e;
+  }).join(" ");
+  var outputString = "M -250 0 " + outputArray.map(function(e,i) { 
+   return "L " + (-250 + .78125*i) + " " + e;
+  }).join(" ");
+  var lpoutputString = "M -250 0 " + lpoutputArray.map(function(e,i) { 
+   return "L " + (-250 + .78125*i) + " " + e;
+  }).join(" ");
+
+  inputPath.attr("d", inputString);
+  lpinputPath.attr("d", inputString);
+  outputPath.attr("d", outputString);
+  lpoutputPath.attr("d", lpoutputString);
+ }, 16);   
+
+});
+</script>
+
+Notice that the low pass output is "smoothed out" compared to the
+original signal. The spiky details are all in the output of the
+high-pass filter, i.e. those spikes are the high-frequency
+components. We could label the output of HPF with a label ("C") and
+the output would be the volume of that note at each moment in time. If
+this was a real music track and we wanted to compress and denoise, we
+might then filter out any entry of the data that is below a certain
+volume, and potentially get a good compression ratio. Unfortunately,
+since this diagram contains a stream of random noise, nothing really
+stands out.
+
+What about the other notes? Notice that there are still bumps in the
+output of the low-pass filter. What if we applied another high pass
+filter on its output, with a lower frequency bound? That would give us
+another "band" of frequencies we could represent with a "note". That's
+what the wavelet transform is: applying successive high-pass filters
+until we've completely separated the signal into frequency bands. And
+that's it. You understand wavelet analysis!  (qualitatively).
+
+# Quantitative description 
+
+To get a quantative understanding of the wavelet transform, first
+let's build a model of the input signal. Let's say there is some
+signal with amplitude $x(t)$ that starts at $t=0$. In other words,
+$x(t) = 0$ or is undefined for $t < 0$. Let's also assume that $x$
+comes in equally spaced measurements, 1 unit of $t$ apart, so we have
+$x(0), x(1), x(2),\dots$ as a stream of data and nothing else.
+
+Our input stream $x(t)$ has a Fourier transform we'll call
+$X(\omega)$. Note that since $x$ has a time resolution of 1 entry per
+second, $X$ is only meaningfully defined between $-\pi$ and
+$\pi$. This can be seen be the definition of the Fourier transform:
+
+$$ X(\omega) = \sum_{0}^{\infty} x(t) e^{-i \omega t}$$ 
+
+Extending $\omega$ past some range $R$:
+
+$$ X(\omega + R) = \sum_{0}^{\infty} x(t) e^{-i (\omega + R) t}
+= \sum_{0}^{\infty} x(t) e^{-i \omega t} e^{-i R t},$$
+
+we see that $X(\omega) = X(\omega + R)$ whenever $Rt$ is an integer
+multiple of $2\pi$. Therefore, if $t$ is an integer, $X(\omega)$ is
+redundant beyond $R= 2\pi$. In general, if $t = Tt'$, where $t'$ is a
+natural number and $T$ is the sample spacing, $X$ is redundant beyond
+$R = 2\pi/T$. The smaller the sample spacing in time, the higher the
+frequency resolution. 
+
+Define a *filter* as an operation on $X(\omega)$ that produces some
+output signal $Y(\omega)$. This is usually some window function,
+$H(\omega)$, so that:
+
+$$ Y(\omega) = H(\omega) X(\omega).$$ 
+
+One example of a window function is 
+
+$$ H(\omega) = \begin{cases} 1 \quad |\omega| > \pi/2 \\ 0 \quad \mbox{otherwise} \end{cases}.$$ 
+
+This window function flattens any frequencies less than $\pi/2$, and
+lets them through otherwise. This is an example of a *high-pass
+filter*. It's not the one we will use though, because the Fourier
+transform of a discontinuous function has infinite components and we
+don't want that when we are implementing the filters in time-space.
+
+Let's look at the output and window functions in time-space. To do
+this, I'll just use the definition of the fourier transform:
+
+$$ \begin{align} Y(\omega) &= H(\omega) X(\omega) \\
+\sum_t y(t) e^{-i \omega t} &= \left ( \sum_k h(k) e^{-i \omega k}  \right ) \left ( \ \sum_{t'} x(t') e^{-i \omega t'} \right ) \\
+&= \sum_{t'}\sum_{k}h(k)x(t')e^{-i \omega (k + t')}. 
+\end{align}$$
+
+So now on the left we have some expression with $y(t)$, and on the
+right we have an expression of $h(k)$ and $x(t)$, with some
+exponential components. Notice that if we let $t' = t - k$, the
+exponential components become the same:
+
+$$ 
+\sum_t y(t) e^{-i \omega t} = \sum_{t}\sum_{k}h(k)x(t-k)e^{-i \omega t}. 
+$$
+
+Therefore we can isolate a relationship between $y(t)$, $h(k)$, and
+$x(t)$:
+
+$$ 
+y(t) = \sum_{k}h(k)x(t-k). 
+$$
+
+How can we interpret this? First, let's try an example. Since we can
+choose any filter that we want, let's try a filter where $h(0) = 1/2$
+and $h(1) = 1/2$, 0 otherwise. Then
+
+$$ y(t) = \frac{1}{2}x(t) + \frac{1}{2} x(t-1). $$
+
+This is a 2-point moving average. Going back to the functional form of
+$y(t)$, you can see that the filter is just some *rolling statistic*
+on $x$. This concept struck me when I first realized it.
+
+## Moving average and difference as low and high pass filters
+
+The 2-point moving average and difference, which I will call $y_l$ and
+$y_h$, are very simple:
+
+$$ y_l(t) = \frac{1}{2}x(t) + \frac{1}{2} x(t-1),\mbox{ and} $$
+$$ y_h(t) = \frac{1}{2}x(t) - \frac{1}{2} x(t-1). $$
+
+It turns out that they function as complementary filters.
+
+### Moving average and difference in frequency space
+
+Let's see how these rolling statistics act in frequency
+space. Remember that we just need to take the Fourier transform on $h$
+to get to the function $H$ that multiplies the frequency spectrum $X$.
+
+Let's do that. For $h_l(k)$, the Fourier transform is
+      
+$$ \begin{align} H_l(\omega)& = \sum_k h_l(k) e^{-i \omega k}\\
+&= h_l(0) + h_l(1) e^{-i \omega} \\ 
+&= \frac{1}{2} (1 + e^{-i \omega}) \\
+&= \frac{1}{2}e^{-i\omega/2} (e^{i \omega/2} + e^{-i \omega 2}) \\
+&= e^{-i \omega /2} cos(\omega/2) . \end{align}$$
+
+To see what frequencies are being selected, we plot the magnitude
+$|H_l(\omega)| = cos(\omega/2)$ from $-\pi$ to $\pi$:
+
+<center>
+```{r, echo = FALSE, message=FALSE, warning=FALSE, fig.width = 4, fig.height = 4}
+library(ggplot2)
+library(dplyr)
+plot.data <- data.frame(w = seq(from = -pi, to = pi, by = .01)) %>% mutate(H = cos(w/2))
+ggplot(data = plot.data, aes(x = w, y = H)) + geom_line() + theme_bw() + ggtitle("|H_l(w)|") + scale_x_continuous(breaks = c(-pi, -pi/2, 0, pi/2, pi), labels = c("-pi", "-pi/2", "0", "pi/2", "pi"))
+```
+</center>
+
+The magnitude is near 1 for frequencies $\omega$ near 0, and goes to
+zero near the limits, $-\pi$ and $\pi$. 
+
+We can do the same for $h_h(k)$. The fourier transform is:
+
+$$ \begin{align} H_h(\omega)& = \sum_k h_h(k) e^{-i \omega k}\\
+&= h_h(0) + h_h(1) e^{-i \omega} \\ 
+&= \frac{1}{2} (1 - e^{-i \omega}) \\
+&= \frac{1}{2}e^{-i\omega/2} (e^{i \omega/2} - e^{-i \omega 2}) \\
+&= e^{-i \omega /2} i sin(\omega/2) . \end{align}$$
+
+The plot of the maginitude $H_h(\omega)$ is seems to be the
+complement of $|H_l(\omega)|$:
+
+<center>
+```{r, echo = FALSE, message=FALSE, warning=FALSE, fig.width = 4, fig.height = 4}
+library(ggplot2)
+library(dplyr)
+plot.data <- data.frame(w = seq(from = -pi, to = pi, by = .01)) %>% mutate(H = abs(sin(w/2)))
+ggplot(data = plot.data, aes(x = w, y = H)) + geom_line() + theme_bw() + ggtitle("|H_h(w)|") + scale_x_continuous(breaks = c(-pi, -pi/2, 0, pi/2, pi), labels = c("-pi", "-pi/2", "0", "pi/2", "pi"))
+```
+</center>
+
+This function goes to 1 at the endpoints $-\pi$ and $\pi$, but goes to
+zero for frequencies near zero. 
+
+Notice that neither of these filters are not even close to "ideal
+filters", i.e. they still let through some opposing frequency. That's
+okay, because this is just a simple example. It would be an
+interesting exercise to find different rolling statistics that act as
+much better filters. Probably could do so via reverse engineering a
+desired frequency spectrum.
+
+### Complementarity
+
+These two filters complement each other. Notice that we can
+reconstruct the full signal by taking the sum or the difference of
+these two filter signals.
+
+$$ y_l(t) + y_h(t) = \frac{1}{2}\left ( x(t) +  x(t-1) + x(t) -  x(t-1)\right ) = x(t). $$
+$$ y_l(t) - y_h(t) = \frac{1}{2}\left ( x(t) +  x(t-1) - x(t) + x(t-1) \right )= x(t-1). $$
+
+It is **very important** that the difference results in a series
+lagged by one time unit. This means that we can reconstruct the full
+signal using only the even members of both $y_l(t)$ and $y_h(t)$. This
+means if we have $N$ samples of $x(t)$, we only need $N/2$ samples of
+each $y_l(t)$ to reconstruct the signal. Remember from the
+introduction how we planned to apply another high pass filter to the
+low pass filter output? Then we'll get two series with $N/4$
+samples. Applying to the low-pass output again will give us two with
+$N/8$ samples, eventually getting down to 1 sample, at which point
+we'll stop. The complementarity of these two filters is important
+because it means our algorithm will *terminate*.
+
+## Building the Wavelet pyramid
+
+So now we have a complementary low-pass filter and a high-pass
+filter. We have a plan to run a recursive algorithm: split a signal (blue)
+into a high-pass output (yellow) and low-pass output (red):
+<div style="width:100%;">
+<svg viewBox="0 0 450 200"> 
+ <circle cx="50" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+  <circle cx="100" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <circle cx="150" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <circle cx="200" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <circle cx="250" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <circle cx="300" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <circle cx="350" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <circle cx="400" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <path stroke="black" fill="none" d="M 60 150 h 30"></path>
+ <path stroke="black" fill="none" d="M 110 150 h 30"></path>
+ <path stroke="black" fill="none" d="M 160 150 h 30"></path>
+ <path stroke="black" fill="none" d="M 210 150 h 30"></path>
+ <path stroke="black" fill="none" d="M 260 150 h 30"></path>
+ <path stroke="black" fill="none" d="M 310 150 h 30"></path>
+ <path stroke="black" fill="none" d="M 360 150 h 30"></path>
+ <circle cx="50" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+  <circle cx="100" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="150" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="200" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="250" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="300" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="350" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="400" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <path stroke="black" fill="none" d="M 60 100 h 30"></path>
+ <path stroke="black" fill="none" d="M 110 100 h 30"></path>
+ <path stroke="black" fill="none" d="M 160 100 h 30"></path>
+ <path stroke="black" fill="none" d="M 210 100 h 30"></path>
+ <path stroke="black" fill="none" d="M 260 100 h 30"></path>
+ <path stroke="black" fill="none" d="M 310 100 h 30"></path>
+ <path stroke="black" fill="none" d="M 360 100 h 30"></path>
+ <circle cx="50" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+  <circle cx="100" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="150" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="200" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="250" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="300" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="350" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="400" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <path stroke="black" fill="none" d="M 60 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 110 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 160 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 210 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 260 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 310 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 360 50 h 30"></path> 
+ <text x="220" y="80" style="fill:black;" font-size="20" font-weight="bold">
+      =
+ </text>
+ <text x="220" y="130" style="fill:black;" font-size="20" font-weight="bold">
+      +
+ </text>
+</svg>
+</div>
+
+downsample each sample so they only contain the even points, all we need to fully reproduce the symbol:
+
+<div style="width:100%;">
+<svg viewBox="0 0 450 200"> 
+  <circle cx="100" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <circle cx="200" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <circle cx="300" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <circle cx="400" cy="150" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <path stroke="black" fill="none" d="M 110 150 h 80"></path>
+ <path stroke="black" fill="none" d="M 210 150 h 80"></path>
+ <path stroke="black" fill="none" d="M 310 150 h 80"></path>
+  <circle cx="100" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="200" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="300" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="400" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <path stroke="black" fill="none" d="M 110 100 h 80"></path>
+ <path stroke="black" fill="none" d="M 210 100 h 80"></path>
+ <path stroke="black" fill="none" d="M 310 100 h 80"></path>
+ <circle cx="50" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+  <circle cx="100" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="150" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="200" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="250" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="300" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="350" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="400" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <path stroke="black" fill="none" d="M 60 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 110 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 160 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 210 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 260 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 310 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 360 50 h 30"></path> 
+ <text x="220" y="80" style="fill:black;" font-size="20" font-weight="bold">
+      =
+ </text>
+ <text x="245" y="130" style="fill:black;" font-size="20" font-weight="bold">
+      +
+ </text>
+</svg>
+</div>
+
+and run the algorithm on the low-pass output,
+
+<div style="width:100%;">
+<svg viewBox="0 0 450 250"> 
+ <circle cx="200" cy="150" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="400" cy="150" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <path stroke="black" fill="none" d="M 210 150 h 180"></path>
+ <circle cx="200" cy="200" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <circle cx="400" cy="200" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+ <path stroke="black" fill="none" d="M 210 200 h 180"></path>
+  <circle cx="100" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="200" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="300" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="400" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <path stroke="black" fill="none" d="M 110 100 h 80"></path>
+ <path stroke="black" fill="none" d="M 210 100 h 80"></path>
+ <path stroke="black" fill="none" d="M 310 100 h 80"></path>
+ <circle cx="50" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+  <circle cx="100" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="150" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="200" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="250" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="300" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="350" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="400" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <path stroke="black" fill="none" d="M 60 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 110 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 160 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 210 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 260 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 310 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 360 50 h 30"></path> 
+ <text x="220" y="80" style="fill:black;" font-size="20" font-weight="bold">
+      =
+ </text>
+ <text x="245" y="130" style="fill:black;" font-size="20" font-weight="bold">
+      +
+ </text>
+ <text x="245" y="180" style="fill:black;" font-size="20" font-weight="bold">
+      +
+ </text>
+</svg>
+</div>
+
+until we are left with the ultimate low pass filter, the full average.
+
+<div style="width:100%;">
+<svg viewBox="0 0 450 300"> 
+ <circle cx="200" cy="150" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="400" cy="150" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <path stroke="black" fill="none" d="M 210 150 h 180"></path>
+ <circle cx="400" cy="200" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="400" cy="250" r="10" stroke="black" stroke-width="2" fill="red"> </circle>
+  <circle cx="100" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="200" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="300" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <circle cx="400" cy="100" r="10" stroke="black" stroke-width="2" fill="yellow"> </circle>
+ <path stroke="black" fill="none" d="M 110 100 h 80"></path>
+ <path stroke="black" fill="none" d="M 210 100 h 80"></path>
+ <path stroke="black" fill="none" d="M 310 100 h 80"></path>
+ <circle cx="50" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+  <circle cx="100" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="150" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="200" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="250" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="300" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="350" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <circle cx="400" cy="50" r="10" stroke="black" stroke-width="2" fill="lightblue"> </circle>
+ <path stroke="black" fill="none" d="M 60 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 110 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 160 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 210 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 260 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 310 50 h 30"></path>
+ <path stroke="black" fill="none" d="M 360 50 h 30"></path> 
+ <text x="220" y="80" style="fill:black;" font-size="20" font-weight="bold">
+      =
+ </text>
+ <text x="245" y="130" style="fill:black;" font-size="20" font-weight="bold">
+      +
+ </text>
+ <text x="245" y="180" style="fill:black;" font-size="20" font-weight="bold">
+      +
+ </text>
+ <text x="245" y="230" style="fill:black;" font-size="20" font-weight="bold">
+      +
+ </text>
+</svg>
+</div>
+
+For 8 input signal points, we have output 8 "wavelet" points, each
+level in the y-direction indicating an individual frequency band, each
+point in the x-direction is a measurement of the volume of that
+frequency band. Notice that there are fewer measurements the lower the
+frequency goes, they have less "time-resolution". Signals that vary
+less in time have lower time resolution.
+
+I hope these diagrams are useful for you to understand the concept,
+now I'm going to put them into matrix form. I'm **skipping** the
+pre-downsampling step, in the interest of space. I'm going to use the
+following notation: $y_h$ is the high-pass output after downsampling,
+$y_l$ is the low-pass output after downsampling, $y_{lh}$ is the
+output after the low-pass filter, downsampling, doing a high-pass
+filter on that, and downsampling, and so on for $y_{ll}$, $y_{llh}$,
+$y_{lll}$. Assuming that $x$ is 8 samples long, the matrix equation is
+going to look something like this for the first step:
+
+$$
+\begin{bmatrix}
+ y_h(1) \\ y_h(3) \\ y_h(5) \\ y_h(7) \\ y_l(1) \\y_l(3) \\ y_l(5) \\ y_l(7)
+\end{bmatrix}
+=
+\frac{1}{2}
+\begin{bmatrix}
+-1 & 1 & 0 & 0 & 0 & 0 & 0 & 0 \\
+0 & 0 & -1 & 1 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & -1 & 1 & 0 & 0 \\
+0 & 0 & 0 & 0 & 0 & 0 & -1 & 1 \\
+1 & 1 & 0 & 0 & 0 & 0 & 0 & 0 \\
+0 & 0 & 1 & 1 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & 1 & 1 & 0 & 0 \\
+0 & 0 & 0 & 0 & 0 & 0 & 1 & 1 \\
+\end{bmatrix}
+\begin{bmatrix}
+ x(0) \\ x(1) \\ x(2) \\ x(3) \\ x(4) \\ x(5) \\ x(6) \\ x(7)
+\end{bmatrix}
+$$
+
+Now we have 4 high-pass points and 4 low-pass points, what will this
+matrix look like after doing a recursive pass on the low-pass? This
+problem looks the same, just using $y_l$ as the starting point and
+half as big: 
+
+$$ \begin{bmatrix}
+ y_{lh}(3) \\ y_{lh}(7) \\y_{ll}(3) \\ y_{ll}(7)
+\end{bmatrix} =
+\frac{1}{2}
+\begin{bmatrix}
+-1 & 1 & 0 & 0 \\
+0 & 0 & -1 & 1 \\
+1 & 1 & 0 & 0 \\
+0 & 0 & 1 & 1 
+\end{bmatrix}
+\begin{bmatrix}
+ y_l(1) \\ y_l(3) \\y_l(5) \\ y_l(7)
+\end{bmatrix}
+$$
+
+We can plug in the definition of $y_l$ to get $y_{lh}$ and $y_{ll}$ in
+terms of $x$.
+
+$$ \begin{align} \begin{bmatrix}
+ y_{lh}(3) \\ y_{lh}(7) \\y_{ll}(3) \\ y_{ll}(7)
+\end{bmatrix} &=
+\frac{1}{4}
+\begin{bmatrix}
+-1 & 1 & 0 & 0 \\
+0 & 0 & -1 & 1 \\
+1 & 1 & 0 & 0 \\
+0 & 0 & 1 & 1 
+\end{bmatrix}
+\begin{bmatrix}
+1 & 1 & 0 & 0 & 0 & 0 & 0 & 0 \\
+0 & 0 & 1 & 1 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & 1 & 1 & 0 & 0 \\
+0 & 0 & 0 & 0 & 0 & 0 & 1 & 1 \\
+\end{bmatrix}
+\begin{bmatrix}
+ x(0) \\ x(1) \\ x(2) \\ x(3) \\ x(4) \\ x(5) \\ x(6) \\ x(7)
+\end{bmatrix} \\ 
+&=
+\frac{1}{4}
+\begin{bmatrix}
+-1 & -1 & 1 & 1 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & -1 & -1 & 1 & 1 \\
+1 & 1 & 1 & 1 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & 1 & 1 & 1 & 1 \\
+\end{bmatrix}
+\begin{bmatrix}
+ x(0) \\ x(1) \\ x(2) \\ x(3) \\ x(4) \\ x(5) \\ x(6) \\ x(7)
+\end{bmatrix} \\ 
+\end{align}
+$$
+
+You can see that that $y_{lh}(3)$ is $x(3) + x(2) - x(1) - x(0)$, it
+is a 4 point moving difference. It's like a stretched out version of
+the original high-pass filter. Likewise $y_{ll}$ is a 4-point moving
+difference, a stretched out version of the original low-pass filter. 
+
+Let me recursively apply the algorithm one last time:
+
+$$ \begin{align} 
+\begin{bmatrix}
+ y_{llh}(7) \\ y_{lll}(7)
+\end{bmatrix} &=
+\frac{1}{2}
+\begin{bmatrix}
+-1 & 1 \\
+1 & 1 \\
+\end{bmatrix}
+\begin{bmatrix}
+ y_{ll}(3) \\ y_{ll}(7)
+\end{bmatrix} \\
+\begin{bmatrix}
+ y_{llh}(7) \\ y_{lll}(7)
+\end{bmatrix} &=
+\frac{1}{8}
+\begin{bmatrix}
+-1 & 1 \\
+1 & 1 \\
+\end{bmatrix}
+\begin{bmatrix}
+1 & 1 & 1 & 1 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & 1 & 1 & 1 & 1 
+\end{bmatrix}
+\begin{bmatrix}
+ x(0) \\ x(1) \\ x(2) \\ x(3) \\ x(4) \\ x(5) \\ x(6) \\ x(7)
+\end{bmatrix} \\ 
+&=
+\frac{1}{8}
+\begin{bmatrix}
+-1 & -1 & -1 & -1 & 1 & 1 & 1 & 1 \\
+1 & 1 & 1 & 1 & 1 & 1 & 1 & 1 
+\end{bmatrix}
+\begin{bmatrix}
+ x(0) \\ x(1) \\ x(2) \\ x(3) \\ x(4) \\ x(5) \\ x(6) \\ x(7)
+\end{bmatrix} \\ 
+\end{align}
+$$
+
+The third pass of the algorithm gives us an 8-point moving difference
+and average. 
+
+The recursion stops here because you can no longer do any filters on
+one point of data. If we put all the high-pass results together in one
+matrix, it looks something like:
+
+$$
+\begin{bmatrix}
+ y_h(1) \\ y_h(3) \\ y_h(5) \\ y_h(7) \\ y_{lh}(3) \\y_{lh}(7) \\ y_{llh}(7) \\ y_{lll}(7)
+\end{bmatrix}
+=
+\begin{bmatrix}
+-h & h & 0 & 0 & 0 & 0 & 0 & 0 \\
+0 & 0 & -h & h & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & -h & h & 0 & 0 \\
+0 & 0 & 0 & 0 & 0 & 0 & -h & h \\
+-h^2 & -h^2 & h^2 & h^2 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & -h^2 & -h^2 & h^2 & h^2 \\
+-h^3 & -h^3 & -h^3 & -h^3 & h^3 & h^3 & h^3 & h^3 \\
+h^3 & h^3 & h^3 & h^3 & h^3 & h^3 & h^3 & h^3 \\
+\end{bmatrix}
+\begin{bmatrix}
+ x(0) \\ x(1) \\ x(2) \\ x(3) \\ x(4) \\ x(5) \\ x(6) \\ x(7)
+\end{bmatrix}
+$$
+
+where $h = \frac{1}{2}$. The matrix on the right is the [normalized
+Haar matrix](https://en.wikipedia.org/wiki/Haar_wavelet#Haar_matrix),
+corresponding to the Haar wavelet transform. The Haar wavelet
+transform was discovered in 1909 by Alfred Haar as just an example of
+an "orthogonal system" one could project a function onto. It wasn't
+considered a "wavelet" until around 75 years later, but it is. At each
+level of filter, we have filtered into some band of frequency which
+you can think of as a "tone". We could label $y_h = C$, $y_{lh} = B$,
+and $y_{llh}= A$ (and $y_{lll}$ would just be some baseline background
+voltage). We also have some notion of "when" they happen in time, more
+for higher-frequency notes than for the lower-frequency notes. To
+complete the music analogy, our transform looks like this:
+
+$$
+\begin{bmatrix}
+ \mbox{C-note}(t=1) \\ \mbox{C-note}(t=3) \\ \mbox{C-note}(t=5) \\ \mbox{C-note}(t=7) \\ \mbox{B-note}(t=3) \\\mbox{B-note}(t=7) \\ \mbox{A-note}(t=7) \\ \mbox{Background}
+\end{bmatrix}
+=
+\begin{bmatrix}
+-h & h & 0 & 0 & 0 & 0 & 0 & 0 \\
+0 & 0 & -h & h & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & -h & h & 0 & 0 \\
+0 & 0 & 0 & 0 & 0 & 0 & -h & h \\
+-h^2 & -h^2 & h^2 & h^2 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & -h^2 & -h^2 & h^2 & h^2 \\
+-h^3 & -h^3 & -h^3 & -h^3 & h^3 & h^3 & h^3 & h^3 \\
+h^3 & h^3 & h^3 & h^3 & h^3 & h^3 & h^3 & h^3 \\
+\end{bmatrix}
+\begin{bmatrix}
+ \mbox{Voltage(0)} \\ \mbox{Voltage(1)} \\ \mbox{Voltage(2)} \\ \mbox{Voltage(3)} \\ \mbox{Voltage(4)} \\ \mbox{Voltage(5)} \\ \mbox{Voltage(6)} \\ \mbox{Voltage(7)}
+\end{bmatrix}
+$$
+
+# What is a wavelet?
+
+All this talk about wavelet transforms, and I haven't talked about
+wavelets very much. A wavelet is a class of functions that become the
+new basis of a coordinate transform, like the complex exponential in
+Fourier series. Each of the rows of the Haar matrix is a basis
+vector. So, in our case, a wavelet looks like the function:
+
+$$ f(x) = \begin{cases} 1 & 0<=x<1/2 \\
+   -1 & 1/2 <= x < 1 \\
+   0 & \mbox{otherwise} \end{cases},$$
+
+at different levels of scales and shift. When you have an incoming
+signal that is equal to a wavelet function, you should see the wavelet
+transform place the wavelet into an appropriate frequency bucket.
+
+The following is an animation of the wavelet transform in action,
+sorting output into different wavelet frequencies. The input is 256
+measurements rolling in from the left into a buffer that goes out 256
+entries to the left. This output is split into $\log(N) - 1 = 7$
+wavelet scales using the filters we described above. 
+
+You might notice that some of the lower-frequency filters update less
+often. That's because the wavelet transform is not "shift-invariant":
+if you shift the input signal forward by one unit of time, you don't
+get the output signal shifted forward by one unit of time, you
+actually get a different answer. Think of the signal where $x(t=1) =
+1$, but 0 everywhere else. When I operate the moving difference
+algorithm on this, $y_h(1) = x(1) - x(0) = 1 - 0 = 1$. But let me
+shift the signal forward one, so that $x(t=0) = 1$ now. Now $y_h(1) =
+x(1) - x(0) = 0 - 1 = -1$. $y_h(1)$ has flipped over the y-axis. You
+might say "hey, but now $y_h(0) = x(0) - x(-1) = 1 - 0 = 1$ now", but
+*we don't have $y_h(0)$ because we downsampled*. The only way to have
+shift invariance is to shift the signal one window length of the
+filter, in this case 2. **This is actually a huge problem and I really
+don't like it. In any practical application, you aren't going to be
+able to align your filter windows perfectly with the incoming signal
+and so you are going to pick up wavelet frequencies that are
+misleading. You can see examples of this phenomena by unchecking the
+box "Align Sent Wavelet Window", wavelets get aliased at other
+frequencies. If anyone knows how to make a wavelet transform
+time-invariant or shift-invariant, I am super interested in that!**
+
+<div
+style="width:100%; padding-top: 20px; padding-bottom: 10px;"
+align="center"> <div style="display: inline-block;"> <button
+id="send0">Send Scale 0</button> <button id="send1">Send Scale
+1</button> <button id="send2">Send Scale 2</button> <button
+id="send3">Send Scale 3</button> <button id="send4">Send Scale
+4</button> <button id="send5">Send Scale 5</button> <button
+id="send6">Send Scale 6</button> <button id="send7">Send Scale
+7</button> </div> <div style="padding-bottom:10px;"> <input
+type="checkbox" id="alignWindow" checked="checked">Align Sent Wavlet
+Window</input> </div> <svg viewbox="-350 -305 700 610"> <g> <rect
+x="50" y="-25" width="100" height="50" stroke="black"
+fill="none"></rect> <text x="80" y="5" style="fill:black;"
+font-size="20"> Input </text> </g> <path stroke="black"
+stroke-width="3" fill="none" d="M 50 0 h -50 v -280 h -50 h 50 v 80 h
+-50 h 50 v 80 h -50 h 50 v 80 h -50 h 50 v 80 h -50 h 50 v 80 h -50 h
+50 v 80 h -50 h 50 v 80 h -50 h 50"></path> <g> <rect x="-150"
+y="-305" width="100" height="50" stroke="black" fill="none"></rect>
+<text x="-130" y="-275" style="fill:black;" font-size="20"> Scale 0
+</text> </g> <g> <rect x="-150" y="-225" width="100" height="50"
+stroke="black" fill="none"></rect> <text x="-130" y="-195"
+style="fill:black;" font-size="20"> Scale 1 </text> </g> <g> <rect
+x="-150" y="-145" width="100" height="50" stroke="black"
+fill="none"></rect> <text x="-130" y="-115" style="fill:black;"
+font-size="20"> Scale 2 </text> </g> <g> <rect x="-150" y="-65"
+width="100" height="50" stroke="black" fill="none"></rect> <text
+x="-130" y="-35" style="fill:black;" font-size="20"> Scale 3 </text>
+</g> <g> <rect x="-150" y="15" width="100" height="50" stroke="black"
+fill="none"></rect> <text x="-130" y="45" style="fill:black;"
+font-size="20"> Scale 4 </text> </g> <g> <rect x="-150" y="95"
+width="100" height="50" stroke="black" fill="none"></rect> <text
+x="-130" y="125" style="fill:black;" font-size="20"> Scale 5 </text>
+</g> <g> <rect x="-150" y="175" width="100" height="50" stroke="black"
+fill="none"></rect> <text x="-130" y="205" style="fill:black;"
+font-size="20"> Scale 6 </text> </g> <g> <rect x="-150" y="255"
+width="100" height="50" stroke="black" fill="none"></rect> <text
+x="-130" y="285" style="fill:black;" font-size="20"> Scale 7 </text>
+</g> <path class="fbinputPath" stroke="black" fill="none" d="M 150 0 h
+200"></path> <path class="fboutputPath0" stroke="black" fill="none"
+d="M -150 -280 h -200"></path> <path class="fboutputPath1"
+stroke="black" fill="none" d="M -150 -200 h -200"></path> <path
+class="fboutputPath2" stroke="black" fill="none" d="M -150 -120 h
+-200"></path> <path class="fboutputPath3" stroke="black" fill="none"
+d="M -150 -40 h -200"></path> <path class="fboutputPath4"
+stroke="black" fill="none" d="M -150 40 h -200"></path> <path
+class="fboutputPath5" stroke="black" fill="none" d="M -150 120 h
+-200"></path> <path class="fboutputPath6" stroke="black" fill="none"
+d="M -150 200 h -200"></path> <path class="backgroundPath"
+stroke="black" fill="none" d="M -150 280 h -200"></path> </svg> </div>
+
+<script> 
+jQuery(document).ready(function() {
+ var inputArray = Array.from(Array(256), () => 0);
+ var outputArray = Array.from(Array(256), () => 0);
+
+ var inputPath = jQuery('.fbinputPath');
+ var outputPath0 = jQuery('.fboutputPath0');
+ var outputPath1 = jQuery('.fboutputPath1');
+ var outputPath2 = jQuery('.fboutputPath2');
+ var outputPath3 = jQuery('.fboutputPath3');
+ var outputPath4 = jQuery('.fboutputPath4');
+ var outputPath5 = jQuery('.fboutputPath5');
+ var outputPath6 = jQuery('.fboutputPath6');
+ var backgroundPath = jQuery('.backgroundPath');
+
+
+ var invsqrt2 = 1/2;
+
+ function highfilterdown(arr) {
+  var output = Array(arr.length/2);
+  for(i = 0; i < arr.length/2; i++) {
+   output[i] = invsqrt2 * (arr[2*i] - arr[2*i+1]);
+  } 
+  return output;
+ }
+
+ function lowfilterdown(arr) {
+  var output = Array(arr.length/2);
+  for(i = 0; i < arr.length/2; i++) {
+   output[i] = invsqrt2 * (arr[2*i+1] + arr[2*i]);
+  } 
+  return output;
+ }
+
+ function renderOutputPath(arr, startx, basey) {
+  var step = 200/arr.length; 
+  var path =  "M " + startx + " " + basey + " " + arr.map(function(e, i) {
+   return "V " + (basey + e) + " h " + step;
+  }).join(" ")
+  return path;
+ }
+
+ var wavelet = {
+  'started' : false,
+  'scale' : 0,
+  'sending' : false
+ };
+
+ function sendWavelet(scale) {
+  return function() { 
+   if(!wavelet['sending  ']) {
+    wavelet['sending'] = true;
+    wavelet['scale'] = scale;
+   }
+  };
+ }
+
+ jQuery('#send0').on('click', sendWavelet(2));
+ jQuery('#send1').on('click', sendWavelet(4));
+ jQuery('#send2').on('click', sendWavelet(8));
+ jQuery('#send3').on('click', sendWavelet(16));
+ jQuery('#send4').on('click', sendWavelet(32));
+ jQuery('#send5').on('click', sendWavelet(64));
+ jQuery('#send6').on('click', sendWavelet(128));
+ jQuery('#send7').on('click', sendWavelet(256));
+
+ var cumY = 0;
+ var updateCounter = 0;
+
+ function actionWavelet() {
+  var scale = wavelet['scale']; 
+  if(!wavelet['sending']) return 0;
+  if(!wavelet['started']) {
+   if(updateCounter % scale == 0 || ! jQuery("#alignWindow").is(':checked')) {
+    wavelet['started'] = updateCounter;                
+    return 0;
+   }
+  } else { 
+   if(updateCounter - wavelet['started'] == 1)  {
+    return -35;
+   }
+   if(updateCounter - wavelet['started'] == scale/2 + 1)  {
+    return 70;
+   }
+   if(updateCounter - wavelet['started'] == scale + 1)  {
+    wavelet['sending'] = false;
+    wavelet['started'] = false;
+    return -35;
+   }
+   
+  }
+  return 0;
+ };   
+ 
+ setInterval(function() {
+  outputArray.shift();
+  outputArray.push(inputArray.shift());
+
+  var random = Math.random();
+  var newdiff = NormSInv(random)*2 - cumY/100;         
+  newdiff += actionWavelet();
+
+  cumY = cumY + newdiff;
+  inputArray.push(inputArray[inputArray.length-1] + newdiff);
+
+  if(updateCounter % 2 == 0) {
+   var outputArray0 = highfilterdown(outputArray);
+   outputPath0.attr("d", renderOutputPath(outputArray0, -350, -280));
+   if(updateCounter % 4 == 0) {
+    var lp = lowfilterdown(outputArray);
+    var outputArray1 = highfilterdown(lp);
+    outputPath1.attr("d", renderOutputPath(outputArray1, -350, -200));
+    if(updateCounter % 8 == 0) {
+     lp = lowfilterdown(lp);
+     var outputArray2 = highfilterdown(lp); 
+     outputPath2.attr("d", renderOutputPath(outputArray2, -350, -120));
+     if(updateCounter % 16 == 0) { 
+      lp = lowfilterdown(lp);  
+      var outputArray3 = highfilterdown(lp);
+      outputPath3.attr("d", renderOutputPath(outputArray3, -350, -40));
+      if(updateCounter % 32 == 0) {
+       lp = lowfilterdown(lp);  
+       var outputArray4 = highfilterdown(lp);
+       outputPath4.attr("d", renderOutputPath(outputArray4, -350, 40));
+       if(updateCounter % 64 == 0) {
+        lp = lowfilterdown(lp);  
+        var outputArray5 = highfilterdown(lp);
+        outputPath5.attr("d", renderOutputPath(outputArray5, -350, 120));  
+        if(updateCounter % 128 == 0) {
+         lp = lowfilterdown(lp);  
+         var outputArray6 = highfilterdown(lp);
+         outputPath6.attr("d", renderOutputPath(outputArray6, -350, 200));
+         if(updateCounter % 256 == 0) {
+          lp = lowfilterdown(lp);
+          var background = highfilterdown(lp);     
+          console.log(background);
+          backgroundPath.attr("d", renderOutputPath(background, -350, 280));
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+  inputPath.attr("d", renderOutputPath(inputArray, 150, 0));
+  updateCounter += 1;  
+ }, 16);   
+
+});
+</script> 
+
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+

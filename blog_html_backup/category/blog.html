@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+        <head>
+                        <meta charset="utf-8" />
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                        <meta name="generator" content="Pelican" />
+                        <title>Michael J. Flynn's blog - Blog</title>
+                        <link rel="stylesheet" href="/theme/css/main.css" />
+        </head>
+
+        <body id="index" class="home">
+                <header id="banner" class="body">
+                        <h1><a href="/">Michael J. Flynn's blog</a></h1>
+                        <nav><ul>
+                                                <li class="active"><a href="/category/blog.html">Blog</a></li>
+                                                <li><a href="/category/misc.html">misc</a></li>
+                                                <li><a href="/category/review.html">Review</a></li>
+                        </ul></nav>
+                </header><!-- /#banner -->
+
+                <aside id="featured" class="body">
+                    <article>
+                        <h1 class="entry-title"><a href="/simple-rna-folding-in-130-lines-of-haskell-version-2.html">Simple RNA folding in 130 lines of Haskell version 2</a></h1>
+<footer class="post-info">
+        <abbr class="published" title="2017-01-09T00:00:00-08:00">
+                Published: Mon 09 January 2017
+        </abbr>
+
+                <address class="vcard author">
+                        By                                 <a class="url fn" href="/author/michael-j-flynn.html">Michael J. Flynn</a>
+                </address>
+        <p>In <a href="/category/blog.html">Blog</a>.</p>
+        
+</footer><!-- /.post-info --><p><link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css"
+      crossorigin="anonymous"></p>
+<p><img alt="" src="/RNAt.svg"></p>
+<p>How do we predict how RNA folds? First of all, we need to define what
+we mean by folding. RNA is a polymer made up of nucleic acids:
+adenine, guanine, cytosine, and uracil. There are 3 levels of RNA
+structure that are traditionally considered:</p>
+<ul>
+<li><strong>primary structure:</strong> the sequence of bases, ‘A’, ‘G’, ‘C’, and ‘U’
+  that form the strand of RNA, ‘AAAAGGGGCCCCUUUU’ for example</li>
+<li><strong>secondary structure:</strong> which bases are hydrogen bonded together, ‘A’
+  to ‘U’ and ‘G’ to ‘C’, can be specified by a sequence of pairs
+  corresponding to which indices are paired together (1,24), (2,23)…,
+  and</li>
+<li><strong>tertiary structure</strong>: how the molecule bends on itself on a larger
+  scale.</li>
+</ul>
+<p>Usually, primary structure is already known or given as an input and
+tertiary structure is hard to specify and compute the energy
+for. Secondary structure is easy to specify using a sequence of pairs
+and the energy is roughly dominated by hydrogen bonding between bases
+which is discrete.  Since RNA functions mostly by binding to things
+using exposed (non-paired) bases, the secondary structure is also the
+most relevant when discerning function. For these reasons,
+biophysicists usually focus on predicting the secondary structure of
+RNA.</p>
+<p>From the laws of thermal physics, if RNA is modeled as a system in
+thermal equilibrium then the probability of any statequestion whether
+it is a physically valid assumption. The answer is NO. There are many
+RNAs found in nature that have "crossing" pairs such as Group I and
+Group II introns. However, without this assumption, computing the
+partition function is intractable, so most RNA folding software
+packages make it. </p>
+<p>While it is tempting to do analysis on a structure with the minimum
+free energy and highest probability, since RNA is a thermal system
+with an exponential multiplicity of states even the probability of the
+most probable state is extremely low and any quantity computed on even
+the most probable state has negligible contribution to the physical
+expected value of that quantity. However, I will show here that not
+only can we compute the partition function, but we can also sample
+from the Boltzmann distribution. Once we are able to do that we can
+compute arbitrary expected values on the full Boltzmann distribution
+via Monte Carlo integration. (In fact, Monte Carlo integration is not
+even needed if you can express your quantity in terms of the partition
+function values, which can give you full expected values without
+statistical error! But that is outside of the scope of this post).</p>
+<p>Putting this all together, to predict the folding and general
+properties of RNA we need 4 things:
+- a specification of a state of RNA <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span>,
+- an energy function, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo>→</mo><mtext>Energy</mtext></mrow><annotation encoding="application/x-tex">E(s) \to \text{Energy}</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">E</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">Energy</span></span></span></span></span>, which takes a state
+  and outputs a physical energy,
+- the partition function, the sum of the Boltmann factors over every
+  possible state <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Z</mi><mo>=</mo><msub><mo>∑</mo><msup><mi>s</mi><mo lspace="0em" mathvariant="normal" rspace="0em">′</mo></msup></msub><msup><mi>e</mi><mrow><mo>−</mo><mi>E</mi><mo stretchy="false">(</mo><msup><mi>s</mi><mo lspace="0em" mathvariant="normal" rspace="0em">′</mo></msup><mo stretchy="false">)</mo><mi mathvariant="normal">/</mi><mi>k</mi><mi>T</mi></mrow></msup></mrow><annotation encoding="application/x-tex">Z = \sum_{s'} e^{-E(s')/kT}</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">Z</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.2422em;vertical-align:-0.2997em;"></span><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1783em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight">s</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6828em;"><span style="top:-2.786em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9425em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mathnormal mtight" style="margin-right:0.05764em;">E</span><span class="mopen mtight">(</span><span class="mord mtight"><span class="mord mathnormal mtight">s</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8278em;"><span style="top:-2.931em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mclose mtight">)</span><span class="mord mtight">/</span><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span></span></span></span></span></span></span></span></span>, and
+- an algorithm for sampling structures from the Boltzmann
+  distribution, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo>=</mo><msup><mi>e</mi><mrow><mo>−</mo><mi>E</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mi mathvariant="normal">/</mi><mi>k</mi><mi>T</mi></mrow></msup><mi mathvariant="normal">/</mi><mi>Z</mi></mrow><annotation encoding="application/x-tex">P(s) = e^{-E(s)/kT}/Z</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.138em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.888em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mathnormal mtight" style="margin-right:0.05764em;">E</span><span class="mopen mtight">(</span><span class="mord mathnormal mtight">s</span><span class="mclose mtight">)</span><span class="mord mtight">/</span><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span></span></span></span></span></span><span class="mord">/</span><span class="mord mathnormal" style="margin-right:0.07153em;">Z</span></span></span></span>.</p>
+<h1>Quick Code Note</h1>
+<p>All code going forward will be in Haskell. You should be able to
+extract all the code here into a file and it should compile. To set up
+our environment, make sure to have this header at the top of the file:</p>
+<div class="highlight"><pre><span></span><code><span class="cm">{-# LANGUAGE NoMonomorphismRestriction #-}</span>
+<span class="cm">{-# LANGUAGE FlexibleContexts          #-}</span>
+<span class="cm">{-# LANGUAGE TypeFamilies              #-}</span>
+<span class="kr">import</span><span class="w"> </span><span class="nn">Data.Array</span>
+<span class="kr">import</span><span class="w"> </span><span class="nn">Data.Time.Clock.POSIX</span><span class="w"> </span>
+<span class="kr">import</span><span class="w"> </span><span class="nn">Data.Colour</span>
+<span class="kr">import</span><span class="w"> </span><span class="nn">System.Random</span>
+<span class="kr">import</span><span class="w"> </span><span class="nn">Data.List</span>
+<span class="kr">import</span><span class="w"> </span><span class="nn">Diagrams.Prelude</span>
+<span class="kr">import</span><span class="w"> </span><span class="nn">Diagrams.Backend.SVG.CmdLine</span>
+</code></pre></div>
+
+<h1>States of RNA</h1>
+<p>Because of the no-pseudoknot assumption, we can actually specify the
+states using a recursive data structure.</p>
+<div class="highlight"><pre><span></span><code><span class="kr">data</span><span class="w"> </span><span class="kt">Structure</span><span class="w"> </span><span class="ow">=</span><span class="w"> </span><span class="kt">Paired</span><span class="w"> </span><span class="kt">Char</span><span class="w"> </span><span class="kt">Char</span><span class="w"> </span><span class="p">(</span><span class="kt">Structure</span><span class="p">,</span><span class="w"> </span><span class="kt">Structure</span><span class="p">)</span><span class="w"> </span><span class="o">|</span>
+<span class="w">                 </span><span class="kt">Slip</span><span class="w"> </span><span class="kt">Char</span><span class="w"> </span><span class="kt">Structure</span><span class="w"> </span><span class="o">|</span>
+<span class="w">                 </span><span class="kt">None</span>
+<span class="w">               </span><span class="kr">deriving</span><span class="w"> </span><span class="kt">Show</span>
+</code></pre></div>
+
+<p>The thought behind this definition is that we are specifying the
+structure base by base. If base <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span> is unpaired, then we move on to
+the next base. If base <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span> is paired, then we fork the structure into
+the bases <em>underneath</em> the pair and the bases <em>after</em> the pair.  We
+carry along the letter of the base for convenience and to compute the
+energies of any pairing that might happen.</p>
+<h1>Energy Model</h1>
+<p>A fully realistic energy model of RNA would be very difficult to
+compute. There are exposed ions everywhere on the strand which
+interact with each other and there is tension in the backbone. Many of
+these interactions are non-linear which breaks the recursion and
+therefore computability of the problem. In practice, there are several
+levels of complexity that are implemented which try to account for the
+non-linearities in a computable fashion (this actually is the only
+difference between professional RNA secondary structure prediction and
+an Algorithms homework problem). Here I will implement a very simple
+energy model: adding the free energies of each hydrogen bond. A
+hydrogen bond contributes about <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>−</mo><mn>6</mn><mtext> kJ/mol</mtext><mo>=</mo><mo>−</mo><mn>2.3</mn><mtext> </mtext><msub><mi>k</mi><mi>B</mi></msub><mi>T</mi></mrow><annotation encoding="application/x-tex">-6\ \text{kJ/mol}=-2.3\
+k_BT</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">−</span><span class="mord">6</span><span class="mspace"> </span><span class="mord text"><span class="mord">kJ/mol</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord">−</span><span class="mord">2.3</span><span class="mspace"> </span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0315em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05017em;">B</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span></span></span></span>. Adenine-uracil bonds have 2 hydrogen bonds, guanine-cytosine
+bonds have 3. Therefore in the exponent of the Boltzmann factor, I
+will put -4.6 for A-U bonds and -6.9 for G-C bonds. Anything else is
+represented by infinite energy, meaning that it will never happen.</p>
+<div class="highlight"><pre><span></span><code><span class="nf">baseEnergy</span><span class="w"> </span><span class="ow">::</span><span class="w"> </span><span class="kt">Char</span><span class="w"> </span><span class="ow">-&gt;</span><span class="w"> </span><span class="kt">Char</span><span class="w"> </span><span class="ow">-&gt;</span><span class="w"> </span><span class="kt">Double</span>
+<span class="nf">baseEnergy</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="n">b</span><span class="w"> </span><span class="ow">=</span><span class="w"> </span><span class="kr">case</span><span class="w"> </span><span class="p">(</span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="kr">of</span>
+<span class="w">  </span><span class="p">(</span><span class="sc">&#39;A&#39;</span><span class="p">,</span><span class="w"> </span><span class="sc">&#39;U&#39;</span><span class="p">)</span><span class="w"> </span><span class="ow">-&gt;</span><span class="w"> </span><span class="o">-</span><span class="mf">4.6</span>
+<span class="w">  </span><span class="p">(</span><span class="sc">&#39;G&#39;</span><span class="p">,</span><span class="w"> </span><span class="sc">&#39;C&#39;</span><span class="p">)</span><span class="w"> </span><span class="ow">-&gt;</span><span class="w"> </span><span class="o">-</span><span class="mf">6.9</span>
+<span class="w">  </span><span class="p">(</span><span class="sc">&#39;U&#39;</span><span class="p">,</span><span class="w"> </span><span class="sc">&#39;A&#39;</span><span class="p">)</span><span class="w"> </span><span class="ow">-&gt;</span><span class="w"> </span><span class="o">-</span><span class="mf">4.6</span>
+<span class="w">  </span><span class="p">(</span><span class="sc">&#39;C&#39;</span><span class="p">,</span><span class="w"> </span><span class="sc">&#39;G&#39;</span><span class="p">)</span><span class="w"> </span><span class="ow">-&gt;</span><span class="w"> </span><span class="o">-</span><span class="mf">6.9</span>
+<span class="w">  </span><span class="n">otherwise</span><span class="w"> </span><span class="ow">-&gt;</span><span class="w"> </span><span class="mf">1.0</span><span class="o">/</span><span class="mf">0.0</span><span class="w"> </span><span class="c1">-- non-allowed pairs treated like an infinite hill</span>
+
+<span class="nf">energyModel</span><span class="w"> </span><span class="ow">::</span><span class="w"> </span><span class="kt">Structure</span><span class="w"> </span><span class="ow">-&gt;</span><span class="w"> </span><span class="kt">Double</span>
+<span class="nf">energyModel</span><span class="w"> </span><span class="p">(</span><span class="kt">Paired</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="n">b</span><span class="w"> </span><span class="p">(</span><span class="n">s1</span><span class="p">,</span><span class="n">s2</span><span class="p">))</span><span class="w"> </span><span class="ow">=</span>
+<span class="w">  </span><span class="p">(</span><span class="n">baseEnergy</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="c1">-- energy of pair</span>
+<span class="w">  </span><span class="p">(</span><span class="n">energyModel</span><span class="w"> </span><span class="n">s1</span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="c1">-- energy of substructure under pair</span>
+<span class="w">  </span><span class="p">(</span><span class="n">energyModel</span><span class="w"> </span><span class="n">s2</span><span class="p">)</span><span class="w"> </span><span class="c1">-- energy of substructure after pair</span>
+<span class="nf">energyModel</span><span class="w"> </span><span class="p">(</span><span class="kt">Slip</span><span class="w"> </span><span class="kr">_</span><span class="w"> </span><span class="n">s</span><span class="p">)</span><span class="w"> </span><span class="ow">=</span><span class="w"> </span><span class="n">energyModel</span><span class="w"> </span><span class="n">s</span>
+<span class="nf">energyModel</span><span class="w"> </span><span class="kt">None</span><span class="w"> </span><span class="ow">=</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span>
+</code></pre></div>
+
+<h1>Partition Function</h1>
+<p>The sum <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Z</mi><mo>=</mo><msub><mo>∑</mo><msup><mi>s</mi><mo lspace="0em" mathvariant="normal" rspace="0em">′</mo></msup></msub><msup><mi>e</mi><mrow><mo>−</mo><mi>E</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mi mathvariant="normal">/</mi><mi>k</mi><mi>T</mi></mrow></msup></mrow><annotation encoding="application/x-tex">Z = \sum_{s'} e^{-E(s)/kT}</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">Z</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1877em;vertical-align:-0.2997em;"></span><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1783em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight">s</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6828em;"><span style="top:-2.786em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.888em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mathnormal mtight" style="margin-right:0.05764em;">E</span><span class="mopen mtight">(</span><span class="mord mathnormal mtight">s</span><span class="mclose mtight">)</span><span class="mord mtight">/</span><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span></span></span></span></span></span></span></span></span> initially seems daunting. There
+are <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mn>1.</mn><msup><mn>8</mn><mi>n</mi></msup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(1.8^n)</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord">1.</span><span class="mord"><span class="mord">8</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6644em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">n</span></span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> structures possible for an RNA strand of length
+<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span>. However, from the recursive definition of our energy model, we
+can easily see that the partition function can be defined recursively
+as well:</p>
+<p>[TODO: partition function definition]</p>
+<p>This becomes a standard dynamic programming homework problem! We can
+turn Z into a table of values where Z[i,j] is the partition function
+from base <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span> to base <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span aria-hidden="true" class="katex-html"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span>. Since each row of the table only depends on
+the entries below and to the left, we can compute the full partition
+function by starting from the bottom left and working out to the top
+right. This is even parallelizable along the diagonals, as shown in
+the diagram: </p>
+<p>[TODO: make elm diagram.]</p>
+<p>Now that we have the partition function, we know the probability of
+any structure from the Boltzmann distribution. </p>
+<h1>Sampling RNA Structures</h1>
+<p>To actually predict the structure of RNA molecules in nature, we can
+work backwards through the partition function table to sample
+structures from the Boltzmann distribution with probability equal to
+their probability to be found in nature. </p>
+<p>[Todo: Haskell code]</p>
+<p>Let's try it out:</p>
+<p>[Todo: try example]</p>
+<p>Cool!</p>
+<h1>Macrostates</h1>
+<p>One last thing to do is cluster these structures into
+Macrostates. Given two structures of the same strand, a distance
+measure can be computed between them and with this distance metric, we
+can classify and compare macrostates. Let's sample a bunch of structures</p>
+<h1>Applications</h1>
+<p>Many genetic diseases are caused by mutations causing RNA to fold
+incorrectly. The treatment is then to find some way to get it to fold
+correctly again. One way to do this is to insert some binding agent to
+block binding to a particular base or set of bases for that strand,
+which disrupts the partition function, energy landscape, and causes
+the strand to fold correctly. For example let's assume that the
+healthy strand is [TODO: insert] but a pointwise mutation has caused
+this to mutate to [TODO: insert]. We can compute a statistical
+distance to the healthy boltzmann distribution and then pick a base to
+block that gets us as close to the healthy distribution as possible. </p>
+<p>[TODO: do example]</p>
+<p>Cool right?</p>                    </article>
+                </aside><!-- /#featured -->
+                <section id="extras" class="body">
+                                <div class="blogroll">
+                                        <h2>links</h2>
+                                        <ul>
+                                                        <li><a href="https://getpelican.com/">Pelican</a></li>
+                                                        <li><a href="https://www.python.org/">Python.org</a></li>
+                                                        <li><a href="https://palletsprojects.com/p/jinja/">Jinja2</a></li>
+                                                        <li><a href="#">You can modify those links in your config file</a></li>
+                                        </ul>
+                                </div><!-- /.blogroll -->
+                                <div class="social">
+                                        <h2>social</h2>
+                                        <ul>
+
+                                                        <li><a href="#">You can add links in your config file</a></li>
+                                                        <li><a href="#">Another social link</a></li>
+                                        </ul>
+                                </div><!-- /.social -->
+                </section><!-- /#extras -->
+
+                <footer id="contentinfo" class="body">
+                        <address id="about" class="vcard body">
+                                Proudly powered by <a rel="nofollow" href="https://getpelican.com/">Pelican</a>, which takes great advantage of <a rel="nofollow" href="https://www.python.org/">Python</a>.
+                        </address><!-- /#about -->
+
+                        <p>The theme is by <a rel="nofollow" href="https://www.smashingmagazine.com/2009/08/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+                </footer><!-- /#contentinfo -->
+
+        </body>
+</html>

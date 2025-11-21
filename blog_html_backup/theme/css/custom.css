@@ -1,0 +1,60 @@
+
+
+
+.navbar,
+.navbar-inner {
+    background: #8B1C23 !important;  /* pure flat background */
+    background-image: none !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Remove embossed look from navbar text */
+.navbar .brand,
+.navbar .nav > li > a,
+.navbar .nav > li > a:hover,
+.navbar .nav > li > a:focus {
+  text-shadow: none !important;
+}
+
+/* Make navbar text white */
+.navbar .brand,
+.navbar .brand .site-name,
+.navbar .nav > li > a {
+    color: #ffffff !important;
+}
+
+/* Hover state (optional — keeps text white, adds slight tint background) */
+.navbar .nav > li > a:hover,
+.navbar .nav > li > a:focus {
+    color: #ffffff !important;
+    background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.navbar .nav > .active > a,
+.navbar .nav > .active > a:hover,
+.navbar .nav > .active > a:focus {
+    background-color: #56171d !important;  /* ~15% darker maroon */
+    color: #ffffff !important;
+    box-shadow: none !important;
+}
+
+/* .navbar .nav > .active > a { */
+/*     background: none !important; */
+/*     color: #ffffff !important; */
+/*     border-bottom: 2px solid #ffffff !important; */
+/* } */
+
+.sidebar {
+    padding-top: 30px;
+}
+
+
+/* Stack the main layout columns on medium/smaller screens */
+@media (max-width: 1100px) {
+  #content .container-fluid .row-fluid > [class*="span"] {
+    float: none;
+    width: 100%;
+    margin-left: 0;
+  }
+}

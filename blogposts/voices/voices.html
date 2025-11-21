@@ -1,0 +1,123 @@
+<head>
+  
+<meta charset="UTF-8">
+</head>
+
+<p><em>If you enjoy this post, subscribe using the form to the left! I try to make new posts every weekend, though sometimes life gets in the way.</em></p>
+<p>I’m interrupting my series on wavelets to do a post on something I’ve been interested in doing for a while. I thought it would be a cool “spy device” to create something that can filter out voices from a recording of a crowded room, and I think I can do that with concepts I’ve previously developed in this blog. My intuition:</p>
+<ol style="list-style-type: decimal">
+<li><p>Every person has a unique set of vocal chords that outputs a certain signature of frequencies.</p></li>
+<li><p>As that person talks, the volume at those frequencies will increase and decrease.</p></li>
+<li><p>A person’s voice should be the biggest source of volume change at these frequencies.</p></li>
+</ol>
+<p><strong>Therefore</strong>, since <a href="http://michaeljflynn.net/2017/02/06/a-tutorial-on-principal-component-analysis/">principal component analysis (PCA)</a> can pick out sets of frequencies that vary with each other, I believe that individuals’ voices can be isolated from a crowded recording by dividing the recording into equally-sized blocks, applying the <a href="https://en.wikipedia.org/wiki/Fourier_transform">Fourier transform</a> to each block (these two steps together are commonly called <a href="https://en.wikipedia.org/wiki/Short-time_Fourier_transform">short-time Fourier transform</a>), and then doing PCA in frequency-space across all blocks. The individual voices should be the projection of the recording onto the principal components.</p>
+<p><em>Note from the future:</em> Turns out that I was wrong. But here’s how I did it:</p>
+<p>I’ve downloaded a <code>.wav</code> file of a crowded bar from <a href="http://freesound.org/people/lonemonk/sounds/31487/">Freesound.org user lonemonk</a>. Give it a listen to see if you can pick anything out, author notes that there are around 50 people in the recording:</p>
+<iframe frameborder="0" scrolling="no" src="https://freesound.org/embed/sound/iframe/31487/simple/large/" width="920" height="245"></iframe>
+
+<p>Let’s talk about the storage format. A <code>.wav</code> file is basically <em>raw</em> sound data, meaning that the entries can be interpreted as voltages across a microphone’s sound plate. These voltages are stored in a pre-set number of bits, are sampled a certain amount of times per second, and typically come in 1 or 2 channels for mono or stereo (two-eared) sound. I’ll use Python to figure out these parameters for this file, using the <code>wave</code> library.</p>
+<p>I’ve saved off the audio to a file called <code>crowded_bar.wav</code>:</p>
+<pre class="python"><code>import wave
+import numpy
+import struct
+
+voices = wave.open('crowded_bar.wav', 'r')
+
+print "Number of channels: " + str(voices.getnchannels())
+
+print "Sample bytewidth: " + str(voices.getsampwidth())
+
+print "Framerate: " + str(voices.getframerate())
+
+print "Number of frames: " + str(voices.getnframes())</code></pre>
+<pre><code>## Number of channels: 2
+## Sample bytewidth: 2
+## Framerate: 44100
+## Number of frames: 15478784</code></pre>
+<p>So it looks like we have 2 audio channels, each sample is 2 bytes long so we can represent each sample as a 16-bit integer, there are 44100 samples per second for a total number of 15478784 frames. That means our recording is <span class="math">\(15478784 \mbox{ frames}/44100 \mbox{ frames/s} \approx 351 \mbox{ seconds}\)</span>. This agrees with the runtime of the audio, 5 minutes and 51 seconds.</p>
+<p>So let’s start coding this up. I’m separating the recording into 10,000 chunks, each chunk with 1547 samples.</p>
+<pre class="python"><code>num_chunks = 10000
+chunk_width = voices.getnframes()/num_chunks</code></pre>
+<p>The samples are stored in 16-bit, little endian format. Python has a nice function called <code>struct.unpack</code> for “unpacking” this data into an int:</p>
+<pre class="python"><code>           ## unpack little-endian ints
+samples =  [[struct.unpack("<h", 
+                           ## read the first 2 bytes of 1 frame. The
+                           ## total sample if 4 bytes long, 1 for each
+                           ## sample, and since the output is a tuple
+                           ## take the 0th output.
+                           voices.readframes(1)[0:2])[0] 
+             ## for all samples in the chunk
+             for i in range(chunk_width)] 
+            ## for all chunks in the recording.
+            for y in range(num_chunks)]    </code></pre>
+<p>Now apply the Fourier transform to each block:</p>
+<pre class="python"><code>print "Starting fft..."
+def print_and_fft(x, i):
+    print i
+    return numpy.fft.fft(x)
+transformed = numpy.matrix(map(print_and_fft, samples, range(len(samples))))
+print "Done fft."</code></pre>
+<p>In the next step, I use only the 1st-<span class="math">\(N/2\)</span>th elements of the Fourier transform. The input and output of this algorithm are real numbers, so that means that the 2nd half of the Fourier transform components are going to be the complex conjugates of the first half, in reverse order, and therefore are redundant. The reason I leave the 0th component out is because that is those are the mean voltages of the chunk, and if I leave them in, in practice I’ve found that when I project onto a principle component, the mean becomes an imaginary number. I don’t want that, so I just set them to zero, effectively filtering out the lowest frequency.</p>
+<pre class="python"><code>means = [0 for x in transformed[:,0]] 
+transformed = transformed[:,1:(transformed.shape[1]/2+1)]</code></pre>
+<p>The next step is the PCA, finding the eigenvectors of the covariance matrix. See my <a href="http://michaeljflynn.net/2017/02/06/a-tutorial-on-principal-component-analysis/">recent post</a> on PCA for an explanation of this calculation.</p>
+<pre class="python"><code>mean_zero = numpy.matrix(numpy.apply_along_axis(lambda x: x - numpy.mean(x), 0, transformed))
+cov = numpy.dot(mean_zero.getH(), mean_zero)
+print "Starting eigenvector solve..."
+w, v = numpy.linalg.eig(cov)
+print "Done eigenvector solve..."</code></pre>
+<p>Now I want to project the spectrum of each chunk on to the principle components, here’s how I do that. It’s basically using the formula for projection of vector <span class="math">\(\vec v\)</span> onto unit vector <span class="math">\(\hat e\)</span>: <span class="math">\(\langle \vec v, \hat e \rangle \hat e\)</span>.</p>
+<pre class="python"><code>def projected_spectrum(component): 
+    return numpy.dot(numpy.dot(transformed.conj(), v[:,component]), v.transpose()[component,:])</code></pre>
+<p>Now we want to invert these projections, and see what the output audio is:</p>
+<pre class="python"><code>def print_and_ifft(x, i):
+    print i
+    return numpy.fft.ifft(x)
+
+def write_component_to_file(component):
+    projected = projected_spectrum(component)
+    projected = numpy.column_stack((means, projected, numpy.fliplr(projected.conj())))
+    inverted = map(print_and_ifft, projected.tolist(), range(len(projected)))
+    first_component = wave.open(str(component) + '.wav', 'w')
+    width = projected.shape[0]
+    height = projected.shape[1]
+    first_component.setparams(
+        (1, # nchannels
+         2, # sampwidth
+         voices.getframerate(), # framerate
+         width * height, 
+         voices.getcomptype(),
+         voices.getcompname()))
+    frames = "".join(["".join([struct.pack("<h", int(i.real)) for i in x]) for x in inverted])     
+    first_component.writeframes(frames)
+    first_component.close()
+    print "Wrote component " + str(component) + " to file."</code></pre>
+<p>Now let’s write the first 5 components to a file, are they voices?</p>
+<pre class="python"><code>write_component_to_file(0)
+write_component_to_file(1)
+write_component_to_file(2)
+write_component_to_file(3)
+write_component_to_file(4)</code></pre>
+<p>Nope!!</p>
+<iframe frameborder="0" scrolling="no" src="https://freesound.org/embed/sound/iframe/397383/simple/large/" width="920" height="245"></iframe>
+
+<iframe frameborder="0" scrolling="no" src="https://freesound.org/embed/sound/iframe/397382/simple/large/" width="920" height="245"></iframe>
+
+<iframe frameborder="0" scrolling="no" src="https://freesound.org/embed/sound/iframe/397381/simple/large/" width="920" height="245"></iframe>
+
+<iframe frameborder="0" scrolling="no" src="https://freesound.org/embed/sound/iframe/397380/simple/large/" width="920" height="245"></iframe>
+
+<iframe frameborder="0" scrolling="no" src="https://freesound.org/embed/sound/iframe/397384/simple/large/" width="920" height="245"></iframe>
+
+
+<p>After fiddling around for a night with the settings, I’ve decided that my intuition was wrong. People’s voices don’t stick to a fixed set of frequencies, their voices change frequencies as they speak all the time. For example, a long, sinking <em>oooooooohhh</em> sound exhibits a pretty constant downward drift in frequency. Since everybody’s vocal frequencies are constantly changing and crossing paths with each other, I don’t think you can isolate one voice by looking at a constant cross section of frequencies. The problem is harder than that.</p>
+<p>After doing some research I’ve discovered that this is indeed a pretty hard problem in signal processing, called <a href="https://en.wikipedia.org/wiki/Blind_signal_separation">blind signal seperation</a>, also known as the cocktail party problem. Apparently <a href="https://www.technologyreview.com/s/537101/deep-learning-machine-solves-the-cocktail-party-problem/">deep learning</a> has been used to solve the problem. That’s interesting, but I somewhat resent a “black box” solution. I’m going to table my exploration of this for now but was interesting to work with audio data.</p>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>

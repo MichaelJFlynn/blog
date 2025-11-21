@@ -1,0 +1,13 @@
+---
+output:
+    html_document
+---
+
+# Wavelets problems 
+
+## Problem Set 1.1
+
+1. Suppose the only nonzero components of $x$ and $h$ are $x(0) = 1$,
+ $x(1) = 3$, $h(0) = 1/2$, and $h(1) = 1/2$. Compute the outputs
+ $y(n)$. Verify in the frequency domain that $Y(\omega) =
+ H(\omega)X(\omega)$.

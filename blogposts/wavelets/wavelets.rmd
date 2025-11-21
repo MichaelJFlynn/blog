@@ -1,0 +1,246 @@
+---
+output:
+    html_fragment
+---
+
+*If you enjoy this post, subscribe using the form to the left! I try
+ to make new posts every weekend, though sometimes life gets in the
+ way.*
+
+Wavelets are a little more interesting to look at than fourier
+transforms, because every real signal comes in non-eternal packets of
+information. Think of Beethoven's Symphony No. 9. In theory, you
+*could* produce the symphony by assembling an infinite orchestra of
+trombones and having them each play a steady note. If you tuned them
+correctly and set the volumes right, you could produce the whole
+sympony, stringed instruments and all. That is how the Fourier Series
+works. However, that's not how we usually think of music. Music is
+played with a finite number of instruments for non-constant
+intervals.
+
+Note on the target audience of this article: I use the "talking to
+myself" format . I have an undergraduate degree in physics as well as
+computer science, and so those with similar backgrounds should be able
+to follow along. Some with less technical backgrounds might have a
+tough time following along, some with more experience in this area
+will find that I am not being accurate/thorough enough. I will do my
+best to reduce the collective pain points from both sides.
+
+This was a harder article to write than my previous ones, since
+wavelets are a relatively recent development, so I only cover the bare
+minimum here. What I will try to do is give a description of the
+essential concept and a "test case" demonstration.
+
+## Digression on Digital Audio
+
+Audio starts as vibrations in the air which go through a microphone,
+which converts the vibration to a analog electrical signal, which is
+then converted to a digital signal using and analog-to-digital
+converter. The digital signal is basically a time series of amplitudes
+that can be then sent back to a speaker to reproduce the signal. The
+limiting parameters are the frequency of sampling (the "sample rate")
+and the number of bits used to represent the amplitude (the "bit
+rate"). Browsing Amazon, a good microphone might have a sample rate of
+200 kHz and a bit rate of 24 bits. For a 3 minute song, that's about
+[108
+megabytes](https://www.wolframalpha.com/input/?i=200+kHz+*+180+seconds+*+24+bits)!
+Compressing the size of media files is a big deal to companies like
+Youtube (Google), because then they save bandwidth to serve more of
+it.
+It would be interesting to see how many bytes are needed to represent
+a song in Fourier Series representation.
+
+Fourier series is one representation of a function, using 
+
+Like the Fourier series, a wavelet transform represents a function in
+a different basis. Where the fourier series uses waves of different
+frequencies, the wavelet transform 
+
+Gilbert Strang
+gives this excellent example in his article "Wavelets" [1].
+
+## History
+
+Wavelet analysis has a complicated, with seperate parts of it being
+"discovered" several times. I cannot hope to do a complete history, or
+give any of the seperate discoverers the credit they deserve in this
+weekend article. 
+
+This article comes at an interesting time because one of the main
+discoverers of wavelet analysis, Yves Myer, has just won the 2017 Abel
+Prize [2]. Morlet wavelets 
+
+There are so many wavelet articles on the web! How do you get through
+them all???
+
+## What is wavelet analysis?
+
+The goal of wavelet analysis is to find a better *representation* of a
+signal by using a better model of the process that generates it. A
+typical intial representation of a signal is as some amplitude that
+varies over time, for example the voltage of the pick-up plate in an
+electret microphone. The signal can be reproduced by recording the
+signal and reproducing the voltages on a speaker. However, storing the
+entire series of amplitudes in a computer can be very
+inefficent. Compare 2 ways of representing the same signal:
+
+"at t = 0 the amplitude of the speaker voltage is 0 mV, at t =
+0.000005 the amplide of the speaker is 3 mV, at $t = .000010$ the
+amplitude of the speaker voltage is 5 mV..."
+
+and
+
+"trombone plays D for 5 seconds" 
+
+the latter is much easier for both humans to understand and for
+computers to store. The problem wavelets try to solve is how we get
+from the former representation to the latter.
+
+One solution is to take the fourier transform of the data. The fourier
+transform represents a signal as a linear combination of periodic
+signals with constant frequency. 
+
+$$ a(t) = \sum_n c(n) e^{-in\omega t} $$.
+
+However there is a fundamental flaw in fourier analysis: all basis
+functions span the entire length of time that makes up the sample. How
+do you represent a trombone playing a five second D at the beginning
+of a five minute track with a symphony of several trombones playing a
+constant note the entire five minutes? It is part of the magic of the
+fourier transform that it is possible, but it is non-intuitive and
+involves a lot of higher frequency trombones zeroing out all the
+residual "D note" after the original 5 seconds is over.
+
+```{r, eval = FALSE}
+signal = rep(0, 2^20)
+signal[1:2^18] = sin(2*pi*25/2^20 * 0:(2^18-1))
+
+library(ggplot2)
+qplot(x = 0:(2^20-1), y = signal)
+
+qplot(x = 0:(2^20-1), y = abs(fft(signal)))
+```
+
+This is where wavelet analysis comes in: to model the data more
+intiuitively. Where the fourier series uses waves of constant
+frequency as a basis, wavelet analysis uses "notes" as a basis. The
+basic structure of a wavelet decomposition is a "mother wavelet",
+which is "scaled" and "shifted" recursively to produce the full set of
+"child wavelets". The set generated by the recursion produces an
+orthonormal basis which can then be used to represent the data.
+
+## The Haar wavelet
+
+The [Haar wavelet](https://en.wikipedia.org/wiki/Haar_wavelet) is a
+concrete example. Given a dataset of $2^n$ sequential points, evenly
+spaced in time, for example a sine wave on the unit interval, sampled
+with 128 points:
+
+```{r, dev="svg"}
+library(ggplot2)
+x <- (0:127)/128
+y <- sin(2*pi*x)
+plot.data <- data.frame(x=x, y=y)
+ggplot(data = plot.data, aes(x = x, y = y)) + 
+ geom_point(size = 1, color = "blue")+
+ theme_bw()
+```
+
+The Haar wavelet first breaks the function down into the sum of all
+the points and the difference between the means of the first $2^{n-1}$
+points and the second $2^{n-1}$ points. What do
+
+$$ \frac{1}{8} \begin{bmatrix}  1 & 1 & 1 & 1 & 1 & 1 & 1 & 1 \\ 1 & 1 & 1 & 1 & -1 &-1 & -1 & -1\end{bmatrix} \begin{bmatrix} x_0 \\ x_1 \\ x_2 \\ x_3 \\ x_4 \\ x_5 \\ x_6 \\ x_7 \end{bmatrix} = \begin{bmatrix} \frac{1}{8} \sum_{n = 0}^7 x_n \\ \frac{1}{8} \sum_{n = 0}^3 x_n - \frac{1}{8}\sum_{n = 4}^7 x_n \end{bmatrix}$$
+
+
+The result of this process can be visualized with a spectrogram.
+
+If the signal is reconstructed from these two components, we would end
+up with a series that contains the average of the first $2^{n-1}$
+points for the first $2^{n-1}$ points, and the average of the second
+$2^{n-1}$ points for the second $2^{n-1}$ points. For the example sine
+wave, this looks like the following:
+
+
+
+Let us formerly define this. The mother wavelet can be defined as some
+function $\phi(t)$. One excellent candidate is $$\phi(t) = e^{-i\omega
+t} e^{-t^2}.$$
+
+```{r, dev="svg"} 
+library(ggplot2)
+phi <- function(x, a, b) 
+ sin(2*pi/128 * 4 * ((x-b)/a)) * exp(-(x)^2/400) * 1/sqrt(a)
+plot.data <- data.frame(x = (-64):64, y = phi((-64):64, 1, 0))
+ggplot(data = plot.data, aes(x = x, y = y)) + geom_line(color = "blue", size = 1) + theme_bw() 
+```
+
+To scale this wavelet, we shift the wave 1/4 to the right and to the
+left and scale it down by 2. Here's the wavelet with two child
+wavelets:
+
+
+The wavelet transform can be seen as a compromise between the spatial
+and Fourier representations of the data. The spatial representation
+has perfect localization in space, but no resolution in frequency
+space. The fourier series has perfect resolution in frequency space,
+but no resolution in spatial space. The wavelet transform has somewhat
+good resolution in frequency space and somewhat good resolution in
+spatial space.
+
+
+Wavelet analysis is a change of basis, just like fourier
+anlysis or principle component analysis. A change of basis is a
+rotation of the coordinate system. In this context, the desired basis
+expresses the data in a sparse form so that less data needs to be sent
+over a wire. For example in 2D space the vector
+
+$$\frac{1}{\sqrt{2}} \begin{barray} 1 \\ 1  \end{barray} = \frac{1}{\sqrt{2}} \begin{barray} 1 & -1 \\ 1 & 1  \end{barray} \begin{barray} 1 \\ 0  \end{barray}.$$
+
+The matrix is the rotation, and the vector being multiplied by the
+matrix is the compressed representation of the original vector, using
+only 1 number when 2 were needed before. The goal of our analysis is
+to pick a basis that represents the data most concisely. For a sine
+wave or other roughtly period phenomena, fourier analysis is the best
+bet.
+
+## Examples of Wavelet analysis
+
+```{r} 
+
+``` 
+
+
+Notes from Wavelets and Filter Banks: 
+
+- p.xii Purpose of wavelets is to discern patters in a signal that are
+  at first not easy to see. This is particularly important when trying
+  to find a signal that can be recognized by a computer. One signal
+  that a computer can recognize very easily is "large" vs
+  "small". Looking at a sine wave, a computer does not know what to
+  do, but given the fourier transform of the sine wave, it is very
+  easy for the fourier to see "there is one frequency with amplitude
+  that is much higher than all the others, which are all zero".
+
+- (thoughts that come from thoughts in the intro) if the fourier
+  transform is just a unitary matrix, so is pca, the combination of
+  these two would also be a unitary matrix. What if we tried to
+  optimize a unitar matrix to compress the signal of some source?
+
+
+[1] Wavelets citation
+
+[2] Davide Castelvecchi (2017). 'Wavelet Revolution' pioneer scoops
+top maths award. Nature 543, 476-477 (23 March 2017). doi:10.1038/543476a. [link](http://www.nature.com/news/wavelet-revolution-pioneer-scoops-top-maths-award-1.21691)
+
+[3] Chun-Lin, L. (2010). A tutorial of the wavelet transform. NTUEE, Taiwan. [link](http://disp.ee.ntu.edu.tw/tutorial/WaveletTutorial.pdf)
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
