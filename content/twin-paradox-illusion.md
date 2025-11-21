@@ -1,6 +1,7 @@
 title: Alice, The Alien, and the Illusion of the Twin Paradox
 date: 2017-01-17 16:16
 author: mflynn
+category: Philosophy of physics is beautiful.
 tags: Philosophy, Physics, Relativity
 slug: alice-the-alien-and-the-illusion-of-the-twin-paradox
 
