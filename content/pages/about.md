@@ -1,4 +1,4 @@
-title: About Me!
+title: About Me
 slug: about-me
 
 I have a PhD in Applied Physics from Caltech, with a specialization in

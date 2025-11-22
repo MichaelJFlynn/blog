@@ -2,7 +2,7 @@ Title: History and Derivation of the Fast Fourier Transform
 Date: 2017-03-20 06:01
 Author: Michael J. Flynn
 Category: Algorithms are beautiful.
-Tags: Uncategorized
+Tags: fourier, FFT
 Slug: history-and-derivation-of-the-fast-fourier-transform
 
 <p><link rel="stylesheet"

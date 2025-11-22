@@ -75,8 +75,6 @@
 
             {% from '_includes/applause_button.html' import applause_button with context %}
             {{ applause_button(article) }}
-            {% from '_includes/share_links.html' import share_links with context %}
-            {{ share_links(article) }}
             {% from '_includes/article_author.html' import article_author with context %}
             {{ article_author(article) }}
             {% from '_includes/comments.html' import comments_section with context %}
@@ -136,7 +134,8 @@
                 {% endfor %}
             </ul>
             {% endif %}
-            {% include '_includes/social_links.html' %}
+	    {% from '_includes/share_links.html' import share_links with context %}
+            {{ share_links(article) }}
             {% from '_includes/mailchimp.html' import mailchimp with context %}
             {{ mailchimp(article) }}
             {% from '_includes/freelists.html' import freelists with context %}

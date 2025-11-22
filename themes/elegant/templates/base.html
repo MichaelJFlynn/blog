@@ -91,15 +91,12 @@
             <div class="container-fluid">
                 <div class="row-fluid">
                   <div class="span3 sidebar">
-		    <div class="profile">
+		    <div class="profile article-content">
 		      <img src="{{ SITEURL }}/theme/images/profile.jpg" alt="Me at my thesis defense." class="profile-pic">
 		      <h3>Michael J. Flynn</h3>
 		      <p>{{ BIO or "Welcome to my blog!" }}</p>
-		    </div>
-		    <div class="social-links">
-		      <a href="https://github.com/YourUsername" target="_blank">GitHub</a><br>
-		      <a href="https://twitter.com/Michaeljaflynn" target="_blank">Twitter</a><br>
-		      <a href="mailto:you@example.com">Email</a>
+		      {% include '_includes/social_links.html' %}
+
 		    </div>
 		  </div>
                     <div class="span9">
