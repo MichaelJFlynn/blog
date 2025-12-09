@@ -91,9 +91,9 @@
     {% from '_includes/_defaults.html' import RECENT_ARTICLES_COUNT, ARCHIVES_URL, CATEGORIES_URL with context %}
     <div class="row-fluid">
         <div class="{{ css_class }}">
-            <header>
-            <h1 id="recent-posts">Recent Posts <a id="allposts" href="{{ SITEURL }}/{{ ARCHIVES_URL }}">all posts</a></h1>
-            </header>
+            <!-- <header> -->
+            <!-- <h1 id="recent-posts">Recent Posts <a id="allposts" href="{{ SITEURL }}/{{ ARCHIVES_URL }}">all posts</a></h1> -->
+            <!-- </header> -->
         <div class="recent-posts">
             {% for article in articles %}
             {% if loop.index0 < RECENT_ARTICLES_COUNT %}

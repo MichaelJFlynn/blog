@@ -1,5 +1,5 @@
 AUTHOR = 'Michael J. Flynn'
-SITENAME = "Michael J. Flynn's blog "
+SITENAME = "michaeljflynn.net"
 
 
 PATH = "content"
@@ -23,7 +23,7 @@ TRANSLATION_FEED_ATOM = None
 AUTHOR_FEED_ATOM = None
 AUTHOR_FEED_RSS = None
 
-LANDING_PAGE_TITLE= "Landing page title"
+LANDING_PAGE_TITLE= "Recent Posts"
 
 # TWITTER_USERNAME= "michaeljaflynn"
 
