@@ -2,7 +2,7 @@ title: Alice, The Alien, and the Illusion of the Twin Paradox
 date: 2017-01-17 16:16
 author: mflynn
 category: Philosophy of physics is beautiful.
-tags: Philosophy, Physics, Relativity
+tags: philosophy, physics, relativity, time, coordinates, symmetry, clocks, synchronization, coordinate systems, spacetime, relative present, Tim Maudlin
 slug: alice-the-alien-and-the-illusion-of-the-twin-paradox
 
 **Note: imported from an earlier version of this blog. Sorry if anything is broken.**

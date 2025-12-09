@@ -2,7 +2,7 @@ Title: Simple RNA folding in 130 lines of Haskell
 Date: 2017-01-09 00:56
 Author: Michael J. Flynn
 Category: Algorithms are beautiful.
-Tags: Computational Physics, Dynamic Programming, Haskell, Partition Function, Recursion, RNA
+Tags: computational physics, dynamic programming, Haskell, partition function, recursion, RNA, RNA folding, RNa secondary structure, hydrogen bonds, thermal physics, thermal equilibrium, Boltzmann distribution, base pair, diagrams, algorithm
 Slug: simple-rna-folding-in-130-lines-of-haskell
 
 

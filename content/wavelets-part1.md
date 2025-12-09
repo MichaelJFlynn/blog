@@ -2,7 +2,7 @@ Title: Wavelets – part 1
 Date: 2017-06-26 04:21
 Author: Michael J. Flynn
 Category: Algorithms are beautiful.
-Tags: Signal Processing, Fourier, Wavelets
+Tags: fourier transform, fourier, FFT, fast fourier transform, signal processing, wavelets, wavelet analysis, Gilbert Strang, Troung Nguyen, wavelet transform, filter banks, high pass filter, low pass filter, filter, frequency space, spectrum, downsampling, Haar matrix, Haar wavelet, algorithm, animation, shift invariance
 Slug: wavelets-part-1
 
 

@@ -2,7 +2,7 @@ Title: History and Derivation of the Fast Fourier Transform
 Date: 2017-03-20 06:01
 Author: Michael J. Flynn
 Category: Algorithms are beautiful.
-Tags: fourier, FFT
+Tags: algorithm, fourier transform, Joseph Fourier, fast fourier transform, FFT, John Tukey, James Cooley, Gauss, memory performance, time performance, algorithm optimization, Richard Garwin, fourier series, complex exponential, discrete fourier series, recursion, butterfly diagram
 Slug: history-and-derivation-of-the-fast-fourier-transform
 
 <p><link rel="stylesheet"
@@ -11,7 +11,7 @@ crossorigin="anonymous"></p>
 <p><strong>Note: imported from an earlier version of this blog.</strong></p>
 
 <p>This is the second post in my series on great algorithms. My last post
-was on the <a href="http://michaeljflynn.net/2015/06/01/my-favorite-algorithm-metropolis-hastings/">Metropolis-Hastings
+was on the <a href="http://michaeljflynn.net/my-favorite-algorithm-metropolis-hastings/">Metropolis-Hastings
 algorithm</a>.</p>
 <h2>History and Motivation</h2>
 <p>The Fourier transform is a fundamental operation in applied math. The
@@ -608,36 +608,7 @@ class="uri">doi:10.2307/2003354</a>.
 <p>[3] Cooley, J. W. (1987). The re-discovery of the fast Fourier
 transform algorithm. Microchimica Acta, 93(1-6), 33-45.
 <a href="https://carma.newcastle.edu.au/jon/Preprints/Talks/CARMA-CE/FFT.pdf">link</a></p>
-<h3>Share this:</h3>
-<ul>
-<li><a
-  href="http://michaeljflynn.net/2017/03/20/history-and-derivation-of-the-fast-fourier-transform/?share=twitter"
-  class="share-twitter sd-button share-icon no-text" rel="nofollow"
-  data-shared="sharing-twitter-551" target="_blank"
-  title="Click to share on Twitter"><span></span><span
-  class="sharing-screen-reader-text">Click to share on Twitter (Opens in
-  new window)</span></a></li>
-<li><a
-  href="http://michaeljflynn.net/2017/03/20/history-and-derivation-of-the-fast-fourier-transform/?share=facebook"
-  class="share-facebook sd-button share-icon no-text" rel="nofollow"
-  data-shared="sharing-facebook-551" target="_blank"
-  title="Click to share on Facebook"><span></span><span
-  class="sharing-screen-reader-text">Click to share on Facebook (Opens in
-  new window)</span></a></li>
-<li><a
-  href="http://michaeljflynn.net/2017/03/20/history-and-derivation-of-the-fast-fourier-transform/?share=google-plus-1"
-  class="share-google-plus-1 sd-button share-icon no-text" rel="nofollow"
-  data-shared="sharing-google-551" target="_blank"
-  title="Click to share on Google+"><span></span><span
-  class="sharing-screen-reader-text">Click to share on Google+ (Opens in
-  new window)</span></a></li>
-<li></li>
-</ul>
-<h3><em>Related</em></h3>
-<p><span class="entry-terms category" itemprop="articleSection">Posted in:
-<a
-href="http://michaeljflynn.net/category/uncategorized/"
-rel="tag">Uncategorized</a></span></p>
+
 <h3>3 Comments</h3>
 <ol>
 <li>

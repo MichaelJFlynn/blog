@@ -2,7 +2,7 @@ Title: A Tutorial on Principal Component Analysis
 Date: 2017-02-06 05:37
 Author: Michael J. Flynn
 Category: Algorithms are beautiful.
-Tags: Machine Learning, PCA, R
+Tags: machine learning, PCA, R, principle component analysis, principle components, rotating coordinates, variance, covariance, covariance matrix, optimization, algorithm, eigenvectors, symmetric matrix, eigenvalues, linear programming, signal processing, signal, noise
 Slug: a-tutorial-on-principal-component-analysis
 
 

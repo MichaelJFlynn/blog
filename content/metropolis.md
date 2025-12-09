@@ -2,7 +2,7 @@ Title: My Favorite Algorithm: Metropolis-Hastings
 Date: 2015-06-01 06:05
 Author: Michael J. Flynn
 Category: Algorithms are beautiful.
-Tags: Computational Physics, Metropolis Hastings, MLT, Monte Carlo, Numerical Integration
+Tags: computational physics, Metropolis-Hastings, Monte Carlo, numerical integration, algorithm, probability distribution, detailed balance, stochastic sampling, light transport, luminosity, Metropolis Light Transport
 Slug: my-favorite-algorithm-metropolis-hastings
 
 
